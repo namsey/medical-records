@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+
+  --color-paper: #faf8f3;
+  --color-card: #ffffff;
+  --color-ink: #1d2733;
+  --color-muted: #667085;
+  --color-line: #e6e2d8;
+  --color-wash: #f3f0e8;
+
+  --color-brand-50: #effaf7;
+  --color-brand-100: #d6f2ea;
+  --color-brand-200: #aee4d6;
+  --color-brand-500: #1f9d86;
+  --color-brand-600: #178270;
+  --color-brand-700: #136a5c;
+  --color-brand-800: #0f5449;
+
+  --color-danger-50: #fef3f2;
+  --color-danger-600: #c0352b;
+  --color-danger-700: #a02a21;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    overscroll-behavior-y: none;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-serif;
+  }
+  button,
+  a,
+  select,
+  input,
+  textarea {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1;
+  }
+  input,
+  select,
+  textarea {
+    /* 16px stops iOS/Android browsers zooming into focused fields */
+    font-size: 16px;
+  }
+  [type="date"] {
+    min-height: 3rem;
+  }
+}
+
+@layer components {
+  .field-input {
+    @apply w-full min-h-12 rounded-xl border border-line bg-white px-3.5 py-2.5 text-base text-ink placeholder:text-muted/70 focus:border-brand-500;
+  }
+  .card {
+    @apply rounded-2xl border border-line bg-card shadow-[0_1px_0_rgba(29,39,51,0.03)];
+  }
+}
+
+.pb-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 0.25rem);
+}

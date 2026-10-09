@@ -1,0 +1,33 @@
+# Secrets and private data: never commit these
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.db-wal
+*.db-shm
+medical-records-backup-*.zip
+medical-records-export-*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/public/pdfjs/
+*.tsbuildinfo
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# graphify-axet
+.graphify/
