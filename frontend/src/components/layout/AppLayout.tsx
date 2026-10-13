@@ -23,7 +23,7 @@ export function AppLayout() {
 
   return (
     <div className="min-h-dvh">
-      <main className="mx-auto w-full max-w-2xl px-4 pb-28 pt-2">
+      <main className="mx-auto w-full max-w-2xl pb-bottom-nav px-4 pt-2">
         <Outlet />
       </main>
       <BottomNav />

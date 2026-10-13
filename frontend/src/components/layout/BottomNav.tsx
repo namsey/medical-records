@@ -24,16 +24,16 @@ const ITEMS: NavItem[] = [
 export function BottomNav() {
   const { pathname } = useLocation()
   return (
-    <nav aria-label="Main" className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-paper/95 backdrop-blur">
-      <ul className="mx-auto flex max-w-2xl items-stretch justify-around px-2">
+    <nav aria-label="Main" className="pb-safe fixed inset-x-0 bottom-0 z-40 h-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom))] border-t border-line bg-paper/95 backdrop-blur">
+      <ul className="mx-auto flex h-full max-w-2xl items-stretch justify-around px-2">
         {ITEMS.map(({ to, label, icon: Icon, isActive, prominent }) => {
           const active = isActive(pathname)
           return (
-            <li key={to} className="flex-1">
+            <li key={to} className="flex flex-1">
               <Link
                 to={to}
                 aria-current={active ? 'page' : undefined}
-                className={`flex min-h-16 flex-col items-center justify-center gap-0.5 text-xs font-semibold transition ${
+                className={`flex flex-1 flex-col items-center justify-center gap-0.5 text-xs font-semibold transition ${
                   active ? 'text-brand-700' : 'text-muted hover:text-ink'
                 }`}
               >

@@ -25,6 +25,10 @@
 }
 
 @layer base {
+  :root {
+    /* Height of the fixed bottom navigation bar (including the + button), excluding the safe-area inset. */
+    --bottom-nav-height: 4.25rem;
+  }
   html {
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
@@ -66,5 +70,10 @@
 }
 
 .pb-safe {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 0.25rem);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Keeps the end of every scrolling page clear of the fixed bottom navigation bar. */
+.pb-bottom-nav {
+  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + 16px);
 }
