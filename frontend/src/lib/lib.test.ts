@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError, request } from './api'
 import { formatDate, formatDayMonth, formatFileSize, orNull, pluralize, todayIso } from './format'
+import { EMPTY_FILTERS, filtersToParams } from '@/hooks/queries'
+import { describeCount, groupByMonth } from './recordList'
 import { FORM_CONFIG, emptyForm, emptyMedicine, formFromRecord, formToInput, validateForm } from './recordForm'
-import type { MedicalRecord } from './types'
+import type { MedicalRecord, RecordSummary } from './types'
 
 describe('format', () => {
   it('formats dates as local calendar dates without timezone drift', () => {
@@ -140,5 +142,38 @@ describe('api client', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
     await expect(request('/api/records/x', { method: 'DELETE' })).resolves.toBeUndefined()
     vi.unstubAllGlobals()
+  })
+})
+
+describe('record list helpers', () => {
+  const rec = (id: string, record_date: string): RecordSummary => ({ id, record_type: 'scan', title: id, record_date, doctor_name: null, lab_name: null, hospital: null, tags: [], document_count: 0 })
+
+  it('groups records under month headers in the order given', () => {
+    const groups = groupByMonth([rec('a', '2026-10-13'), rec('b', '2026-10-02'), rec('c', '2026-09-15'), rec('d', '2025-09-01')])
+    expect(groups.map((g) => [g.label, g.records.map((r) => r.id)])).toEqual([
+      ['October 2026', ['a', 'b']],
+      ['September 2026', ['c']],
+      ['September 2025', ['d']],
+    ])
+    expect(groupByMonth([rec('x', '2024-01-05'), rec('y', '2026-01-05')]).map((g) => g.label)).toEqual(['January 2024', 'January 2026'])
+  })
+
+  it('describes the count with the active filters', () => {
+    expect(describeCount(7, EMPTY_FILTERS)).toBe('7 records')
+    expect(describeCount(1, EMPTY_FILTERS)).toBe('1 record')
+    expect(describeCount(3, { ...EMPTY_FILTERS, types: ['lab_report'], year: '2026' })).toBe('3 lab reports in 2026')
+    expect(describeCount(1, { ...EMPTY_FILTERS, types: ['diagnosis'] })).toBe('1 diagnosis')
+    expect(describeCount(2, { ...EMPTY_FILTERS, types: ['other'] })).toBe('2 other records')
+    expect(describeCount(4, { ...EMPTY_FILTERS, types: ['scan', 'other'], tags: ['Knee'] })).toBe('4 records of 2 types tagged Knee')
+    expect(describeCount(2, { ...EMPTY_FILTERS, dateFrom: '2026-01-01' })).toBe('2 records from 01 Jan 2026')
+    expect(describeCount(1, { ...EMPTY_FILTERS, q: 'thyroid' })).toBe('1 record found')
+  })
+
+  it('turns a year into date bounds, keeping the stricter of year and range, and sends the sort', () => {
+    const params = filtersToParams({ ...EMPTY_FILTERS, year: '2026', dateFrom: '2026-03-01', sort: 'oldest' })
+    expect(params.get('date_from')).toBe('2026-03-01')
+    expect(params.get('date_to')).toBe('2026-12-31')
+    expect(params.get('sort')).toBe('oldest')
+    expect(filtersToParams(EMPTY_FILTERS).toString()).toBe('')
   })
 })

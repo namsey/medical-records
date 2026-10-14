@@ -18,6 +18,8 @@ export function useRecordFilters(): [RecordFilters, (next: RecordFilters) => voi
       tags: params.getAll('tag'),
       dateFrom: params.get('from') ?? '',
       dateTo: params.get('to') ?? '',
+      year: /^\d{4}$/.test(params.get('year') ?? '') ? (params.get('year') as string) : '',
+      sort: params.get('sort') === 'oldest' ? 'oldest' : 'newest',
     }),
     [params],
   )
@@ -30,6 +32,8 @@ export function useRecordFilters(): [RecordFilters, (next: RecordFilters) => voi
       next.tags.forEach((tag) => updated.append('tag', tag))
       if (next.dateFrom) updated.set('from', next.dateFrom)
       if (next.dateTo) updated.set('to', next.dateTo)
+      if (next.year) updated.set('year', next.year)
+      if (next.sort === 'oldest') updated.set('sort', 'oldest')
       setParams(updated, { replace: true })
     },
     [setParams],
@@ -39,5 +43,5 @@ export function useRecordFilters(): [RecordFilters, (next: RecordFilters) => voi
 }
 
 export function countActiveFilters(filters: RecordFilters): number {
-  return filters.types.length + filters.tags.length + (filters.dateFrom ? 1 : 0) + (filters.dateTo ? 1 : 0)
+  return filters.types.length + filters.tags.length + (filters.dateFrom ? 1 : 0) + (filters.dateTo ? 1 : 0) + (filters.year ? 1 : 0)
 }

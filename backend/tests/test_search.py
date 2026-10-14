@@ -128,3 +128,13 @@ def test_timeline_is_chronological_and_filterable(client, seeded):
     only_labs = client.get("/api/timeline?record_type=lab_report").json()
     assert [i["id"] for i in only_labs] == [seeded["lab"]["id"]]
     assert only_labs[0]["lab_name"] == "Pathcare Diagnostics"
+
+
+def test_years_lists_each_year_with_records_newest_first(client, seeded):
+    response = client.get("/api/years")
+    assert response.status_code == 200, response.text
+    assert response.json() == [{"year": 2026, "record_count": 4}, {"year": 2025, "record_count": 1}]
+
+
+def test_years_is_empty_without_records(client):
+    assert client.get("/api/years").json() == []

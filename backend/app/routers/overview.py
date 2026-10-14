@@ -1,4 +1,4 @@
-"""Tags and the chronological timeline."""
+"""Tags, record years and the chronological timeline."""
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import Tag, record_tags
+from app.models import MedicalRecord, Tag, record_tags
 from app.routers.records import get_filters
-from app.schemas import TagOut, TimelineItem
+from app.schemas import TagOut, TimelineItem, YearCount
 from app.security import private_dependencies
 from app.services import records as record_service
 from app.services.search import RecordFilters, search_records
@@ -25,6 +25,14 @@ def list_tags(db: Session = Depends(get_db)) -> list[TagOut]:
         .order_by(func.lower(Tag.name))
     ).all()
     return [TagOut(name=name, record_count=count) for name, count in rows]
+
+
+@router.get("/years", response_model=list[YearCount])
+def list_years(db: Session = Depends(get_db)) -> list[YearCount]:
+    """Every year that has records, newest first, for the year filter chips."""
+    year = func.strftime("%Y", MedicalRecord.record_date)
+    rows = db.execute(select(year, func.count(MedicalRecord.id)).group_by(year).order_by(year.desc())).all()
+    return [YearCount(year=int(value), record_count=count) for value, count in rows]
 
 
 @router.get("/timeline", response_model=list[TimelineItem])

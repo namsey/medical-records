@@ -1,7 +1,6 @@
 import { ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { useState } from 'react'
 import { useTags } from '@/hooks/queries'
-import { countActiveFilters } from '@/hooks/useRecordFilters'
 import { RECORD_TYPES, RECORD_TYPE_INFO } from '@/lib/recordTypes'
 import type { RecordFilters, RecordType } from '@/lib/types'
 import { Button } from '../ui/Button'
@@ -13,16 +12,19 @@ interface FilterPanelProps {
   onChange: (next: RecordFilters) => void
   /** Timeline only filters by type. */
   typesOnly?: boolean
+  /** Records picks the type with chips above the panel, so the panel leaves it out. */
+  hideTypes?: boolean
 }
 
 function toggle<T>(list: T[], item: T): T[] {
   return list.includes(item) ? list.filter((entry) => entry !== item) : [...list, item]
 }
 
-export function FilterPanel({ filters, onChange, typesOnly = false }: FilterPanelProps) {
+export function FilterPanel({ filters, onChange, typesOnly = false, hideTypes = false }: FilterPanelProps) {
   const [open, setOpen] = useState(false)
   const { data: tags } = useTags()
-  const active = typesOnly ? filters.types.length : countActiveFilters(filters)
+  const panelFilters = typesOnly ? 0 : filters.tags.length + (filters.dateFrom ? 1 : 0) + (filters.dateTo ? 1 : 0)
+  const active = (hideTypes ? 0 : filters.types.length) + panelFilters
 
   return (
     <div className="card">
@@ -40,15 +42,17 @@ export function FilterPanel({ filters, onChange, typesOnly = false }: FilterPane
 
       {open && (
         <div className="space-y-5 border-t border-line p-4">
-          <Field label="Record type">
-            <div className="flex flex-wrap gap-2">
-              {RECORD_TYPES.map((type: RecordType) => (
-                <ToggleChip key={type} selected={filters.types.includes(type)} onClick={() => onChange({ ...filters, types: toggle(filters.types, type) })}>
-                  {RECORD_TYPE_INFO[type].label}
-                </ToggleChip>
-              ))}
-            </div>
-          </Field>
+          {!hideTypes && (
+            <Field label="Record type">
+              <div className="flex flex-wrap gap-2">
+                {RECORD_TYPES.map((type: RecordType) => (
+                  <ToggleChip key={type} selected={filters.types.includes(type)} onClick={() => onChange({ ...filters, types: toggle(filters.types, type) })}>
+                    {RECORD_TYPE_INFO[type].label}
+                  </ToggleChip>
+                ))}
+              </div>
+            </Field>
+          )}
 
           {!typesOnly && (
             <>
@@ -80,7 +84,7 @@ export function FilterPanel({ filters, onChange, typesOnly = false }: FilterPane
           )}
 
           {active > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => onChange({ ...filters, types: [], tags: typesOnly ? filters.tags : [], dateFrom: typesOnly ? filters.dateFrom : '', dateTo: typesOnly ? filters.dateTo : '' })}>
+            <Button variant="ghost" size="sm" onClick={() => onChange({ ...filters, types: hideTypes ? filters.types : [], tags: typesOnly ? filters.tags : [], dateFrom: typesOnly ? filters.dateFrom : '', dateTo: typesOnly ? filters.dateTo : '' })}>
               Clear filters
             </Button>
           )}

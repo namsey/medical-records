@@ -1,13 +1,15 @@
 import { FileSearch, FolderOpen, Search, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useRecordFilters, countActiveFilters } from '@/hooks/useRecordFilters'
-import { useRecordList } from '@/hooks/queries'
+import { EMPTY_FILTERS, useRecordList } from '@/hooks/queries'
 import { useDebounced } from '@/hooks/useDebounced'
 import { errorMessage } from '@/lib/api'
-import { pluralize } from '@/lib/format'
+import { describeCount, groupByMonth } from '@/lib/recordList'
+import type { RecordSort } from '@/lib/types'
 import { Button, LinkButton } from '../ui/Button'
 import { CardSkeletons, EmptyState, ErrorMessage } from '../ui/feedback'
 import { FilterPanel } from './FilterPanel'
+import { QuickFilters } from './QuickFilters'
 import { RecordCard } from './RecordCard'
 
 interface RecordBrowserProps {
@@ -78,7 +80,9 @@ export function RecordBrowser({ withSearchBox }: RecordBrowserProps) {
         </form>
       )}
 
-      <FilterPanel filters={filters} onChange={setFilters} />
+      {!withSearchBox && <QuickFilters filters={filters} onChange={setFilters} />}
+
+      <FilterPanel filters={filters} onChange={setFilters} hideTypes={!withSearchBox} />
 
       {query.isPending && <CardSkeletons />}
 
@@ -92,7 +96,7 @@ export function RecordBrowser({ withSearchBox }: RecordBrowserProps) {
               title="No matching records"
               description="Try different words or clear some filters."
               action={
-                <Button variant="secondary" onClick={() => { setText(''); setFilters({ q: '', types: [], tags: [], dateFrom: '', dateTo: '' }) }}>
+                <Button variant="secondary" onClick={() => { setText(''); setFilters({ ...EMPTY_FILTERS, sort: filters.sort }) }}>
                   Clear search and filters
                 </Button>
               }
@@ -110,17 +114,48 @@ export function RecordBrowser({ withSearchBox }: RecordBrowserProps) {
 
       {records.length > 0 && (
         <>
-          <p className="px-1 text-sm text-muted" aria-live="polite">
-            {pluralize(total, 'record')}
-            {hasCriteria ? ' found' : ''}
-          </p>
-          <ul className="space-y-3">
-            {records.map((record) => (
-              <li key={record.id}>
-                <RecordCard record={record} />
-              </li>
-            ))}
-          </ul>
+          <div className="flex items-center justify-between gap-2 px-1">
+            <p className="text-sm text-muted" aria-live="polite">
+              {describeCount(total, withSearchBox ? filters : { ...filters, q: '' })}
+            </p>
+            {!withSearchBox && (
+              <select
+                aria-label="Sort records"
+                value={filters.sort}
+                onChange={(event) => setFilters({ ...filters, sort: event.target.value as RecordSort })}
+                className="min-h-11 shrink-0 rounded-lg bg-transparent px-1 font-semibold text-ink hover:bg-wash"
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+            )}
+          </div>
+          {withSearchBox ? (
+            <ul className="space-y-3">
+              {records.map((record) => (
+                <li key={record.id}>
+                  <RecordCard record={record} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="space-y-4">
+              {groupByMonth(records).map((group) => (
+                <section key={group.key} aria-labelledby={`month-${group.key}`} className="space-y-2">
+                  <h2 id={`month-${group.key}`} className="px-1 font-sans text-sm font-semibold text-muted">
+                    {group.label}
+                  </h2>
+                  <ul className="space-y-3">
+                    {group.records.map((record) => (
+                      <li key={record.id}>
+                        <RecordCard record={record} />
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          )}
           {query.hasNextPage && (
             <Button variant="secondary" className="w-full" loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
               Load more
