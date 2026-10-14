@@ -75,7 +75,7 @@ export function TimelinePage() {
               {group.days.map((day) => (
                 <li key={day.date} className="relative">
                   <span className="absolute -left-[1.4rem] top-1.5 size-3 rounded-full border-2 border-paper bg-brand-600" aria-hidden />
-                  <p className="mb-2 text-sm font-bold uppercase tracking-wide text-brand-800">{formatDayMonth(day.date)}</p>
+                  <h3 className="group-heading mb-2">{formatDayMonth(day.date)}</h3>
                   <ul className="space-y-2">
                     {day.items.map((item) => (
                       <li key={item.id}>
