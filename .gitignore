@@ -21,6 +21,9 @@ __pycache__/
 node_modules/
 frontend/dist/
 frontend/public/pdfjs/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
 *.tsbuildinfo
 
 # Editors / OS

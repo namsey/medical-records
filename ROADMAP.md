@@ -32,6 +32,10 @@ Work top to bottom. Each item lists what "done" means.
 - [x] #13 Helpful empty states for: no records, no search results, and filters with no matches (with a clear action).
   - Notes: Records, Search and Timeline tell apart: no records at all ("No records yet"/"Nothing on the timeline" + Add your first record), a search with no results ("No results for …", spelling hint or the active filters named, Clear search, plus Clear filters when filters are on), and filters with no matches ("No records match these filters" naming them, Clear filters that keeps search and sort). Home has its own no-records state. Each case and its action is covered by a test.
 
+## Engineering
+- [x] #34 Tests and CI: Playwright end-to-end tests for the core flows at 390px width (add a record of each type with an attachment, view, edit, delete, search, filter, List/Timeline toggle), and a GitHub Actions workflow that runs install, lint, build and the tests on every PR to main.
+  - Notes: Playwright suite (frontend/e2e, 7 steps, ~15s) runs the real app at 390px against a throwaway database: adds all 7 record types with PDF/PNG attachments, views one and its attachment, edits, deletes, searches, filters by type/year chips, and toggles List/Timeline. Signs in via a session created directly in the test database (no test-only login route). Lint: Ruff (backend) and oxlint (frontend; typescript-eslint doesn't support TypeScript 7 yet). .github/workflows/ci.yml runs backend, frontend and end-to-end jobs on every PR to main. Deferred: two existing React patterns are lint warnings, not errors (RecordBrowser latest-ref, PdfViewer loading reset).
+
 ## Parked (not planned)
 Do not implement or suggest these unless I explicitly ask.
 
