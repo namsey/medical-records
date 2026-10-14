@@ -1,4 +1,3 @@
-===== FILE: ROADMAP.md =====
 # Medical Records: Roadmap
 
 Work top to bottom. Each item lists what "done" means.
