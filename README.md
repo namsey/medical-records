@@ -153,12 +153,23 @@ Open <http://localhost:5173>.
 
 ```bash
 cd backend && pip install -r requirements-dev.txt && python -m pytest      # API, auth, uploads, search, backup tests
+cd backend && ruff check .                                         # lint (Python)
 cd frontend && npm test                                            # component / flow tests
+cd frontend && npm run lint                                        # lint (TypeScript/React, oxlint)
 cd frontend && npm run build                                       # strict TypeScript check + production build
+cd frontend && npx playwright install chromium                     # once, for the end-to-end tests
+cd frontend && E2E_PYTHON=../backend/.venv/bin/python npm run test:e2e   # end-to-end tests in a real browser
 ```
 
 The backend tests use a temporary database and upload folder and never touch your real data. Google is not
 contacted: the sign-in tests replace the Google call.
+
+The end-to-end tests (`frontend/e2e/`) build the app, start the real server against a throwaway database in your
+temp folder, and drive Chromium at phone size (390px): adding a record of every type with an attachment, viewing,
+editing, deleting, search, filters and the List/Timeline switch. `E2E_PYTHON` is the Python that has the backend's
+requirements installed (on Windows: `..\backend\.venv\Scripts\python.exe`).
+
+GitHub Actions (`.github/workflows/ci.yml`) runs all of the above on every pull request to `main`.
 
 ### Database migrations
 
