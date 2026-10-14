@@ -491,6 +491,28 @@ describe('timeline', () => {
   })
 })
 
+describe('timeline empty states', () => {
+  it('explains when the type filter matches nothing and clears it', async () => {
+    mockApi({
+      ...authed,
+      'GET /api/tags': [],
+      'GET /api/timeline': (call) => ({ json: call.params.get('record_type') ? [] : [{ id: 'a', record_type: 'lab_report', title: 'Blood Test', record_date: '2026-09-10', doctor_name: null, lab_name: null, document_count: 0 }] }),
+    })
+    renderApp('/timeline?type=scan')
+    expect(await screen.findByRole('heading', { name: 'No records match these filters' })).toBeInTheDocument()
+    expect(screen.getByText(/Nothing found for Scan/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(await screen.findByRole('link', { name: /Blood Test/ })).toBeInTheDocument()
+  })
+
+  it('invites adding the first record when the timeline is empty', async () => {
+    mockApi({ ...authed, 'GET /api/tags': [], 'GET /api/timeline': [] })
+    renderApp('/timeline')
+    expect(await screen.findByRole('heading', { name: 'Nothing on the timeline' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Add your first record' })).toHaveAttribute('href', '/add')
+  })
+})
+
 describe('doctors', () => {
   it('lists doctors and adds a new one', async () => {
     const doctors = [{ id: 'd1', name: 'Dr. Anita Sharma', specialization: 'Endocrinology', hospital: 'Sunrise Clinic', phone: '12345', email: null, address: null, notes: null, record_count: 2 }]
