@@ -70,7 +70,7 @@ export function MedicineList({ medicines }: { medicines: Medicine[] }) {
   if (medicines.length === 0) return null
   return (
     <section className="space-y-2">
-      <h2 className="text-lg font-semibold">Medicines</h2>
+      <h2 className="section-heading">Medicines</h2>
       <ul className="space-y-2">
         {medicines.map((medicine, index) => (
           <MedicineCard key={medicine.id ?? index} medicine={medicine} />
@@ -100,7 +100,7 @@ export function ResultList({ results }: { results: LabResult[] }) {
   if (results.length === 0) return null
   return (
     <section className="space-y-2">
-      <h2 className="text-lg font-semibold">Results</h2>
+      <h2 className="section-heading">Results</h2>
       <ul className="space-y-2">
         {results.map((result, index) => (
           <ResultCard key={result.id ?? index} result={result} />
@@ -115,7 +115,7 @@ export function TagLinks({ tags }: { tags: string[] }) {
   return (
     <div className="flex flex-wrap gap-2">
       {tags.map((tag) => (
-        <Link key={tag} to={`/records?tag=${encodeURIComponent(tag)}`}>
+        <Link key={tag} to={`/records?tag=${encodeURIComponent(tag)}`} className="inline-flex min-h-11 items-center">
           <TagPill>{tag}</TagPill>
         </Link>
       ))}

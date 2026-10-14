@@ -15,7 +15,7 @@ export function MedicinesEditor({ medicines, errors, onChange }: MedicinesEditor
 
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-semibold">Medicines</h2>
+      <h2 className="section-heading">Medicines</h2>
       {medicines.length === 0 && <p className="text-sm text-muted">No medicines added yet.</p>}
       {medicines.map((medicine, index) => (
         <div key={medicine.key} className="space-y-3 rounded-xl border border-line bg-paper p-3">
@@ -58,7 +58,7 @@ export function LabResultsEditor({ results, errors, onChange }: ResultsEditorPro
   return (
     <div className="space-y-3">
       <div>
-        <h2 className="text-lg font-semibold">Individual results</h2>
+        <h2 className="section-heading">Individual results</h2>
         <p className="text-sm text-muted">Optional. Enter values exactly as printed on the report.</p>
       </div>
       {results.map((result, index) => (

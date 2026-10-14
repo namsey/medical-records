@@ -45,7 +45,7 @@ export function EmptyState({ icon: Icon, title, description, action }: EmptyStat
       <div className="mb-4 grid size-16 place-items-center rounded-full bg-brand-50 text-brand-700">
         <Icon className="size-8" aria-hidden />
       </div>
-      <h2 className="text-lg font-semibold">{title}</h2>
+      <h2 className="section-heading">{title}</h2>
       {description && <p className="mt-1 max-w-xs text-sm text-muted">{description}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>

@@ -49,13 +49,13 @@ export function DoctorsPage() {
             {(doctor.phone || doctor.email) && (
               <div className="flex flex-wrap gap-2 border-t border-line px-4 py-2">
                 {doctor.phone && (
-                  <a href={`tel:${doctor.phone}`} className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-brand-700">
+                  <a href={`tel:${doctor.phone}`} className="inline-flex min-h-11 min-w-11 items-center gap-1.5 text-sm font-semibold text-brand-700">
                     <Phone className="size-4" aria-hidden />
                     {doctor.phone}
                   </a>
                 )}
                 {doctor.email && (
-                  <a href={`mailto:${doctor.email}`} className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-brand-700">
+                  <a href={`mailto:${doctor.email}`} className="inline-flex min-h-11 min-w-11 items-center gap-1.5 text-sm font-semibold text-brand-700">
                     <Mail className="size-4" aria-hidden />
                     Email
                   </a>

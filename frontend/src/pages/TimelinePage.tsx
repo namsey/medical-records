@@ -1,9 +1,9 @@
-import { CalendarClock, Menu, Paperclip } from 'lucide-react'
+import { CalendarClock, Menu } from 'lucide-react'
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { FilterPanel } from '@/components/records/FilterPanel'
-import { TypeIcon } from '@/components/records/RecordCard'
+import { RecordCard } from '@/components/records/RecordCard'
 import { ViewSwitch } from '@/components/records/ViewSwitch'
 import { LinkButton } from '@/components/ui/Button'
 import { CardSkeletons, EmptyState, ErrorMessage } from '@/components/ui/feedback'
@@ -11,7 +11,6 @@ import { useTimeline } from '@/hooks/queries'
 import { useRecordFilters } from '@/hooks/useRecordFilters'
 import { errorMessage } from '@/lib/api'
 import { formatDayMonth, yearOf } from '@/lib/format'
-import { RECORD_TYPE_INFO } from '@/lib/recordTypes'
 import type { TimelineItem } from '@/lib/types'
 
 interface DayGroup {
@@ -77,25 +76,16 @@ export function TimelinePage() {
       <div className="space-y-8">
         {groups.map((group) => (
           <section key={group.year} aria-label={group.year}>
-            <h2 className="mb-3 text-2xl font-semibold">{group.year}</h2>
+            <h2 className="section-heading mb-3">{group.year}</h2>
             <ol className="space-y-5 border-l-2 border-line pl-4">
               {group.days.map((day) => (
                 <li key={day.date} className="relative">
                   <span className="absolute -left-[1.4rem] top-1.5 size-3 rounded-full border-2 border-paper bg-brand-600" aria-hidden />
-                  <p className="mb-2 text-sm font-bold uppercase tracking-wide text-brand-800">{formatDayMonth(day.date)}</p>
+                  <h3 className="group-heading mb-2">{formatDayMonth(day.date)}</h3>
                   <ul className="space-y-2">
                     {day.items.map((item) => (
                       <li key={item.id}>
-                        <Link to={`/records/${item.id}`} className="card flex items-center gap-3 p-3 transition active:bg-wash">
-                          <TypeIcon type={item.record_type} className="size-10" />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-semibold leading-snug">{item.title}</p>
-                            <p className="truncate text-sm text-muted">
-                              {[RECORD_TYPE_INFO[item.record_type].label, item.doctor_name, item.lab_name].filter(Boolean).join(' · ')}
-                            </p>
-                          </div>
-                          {item.document_count > 0 && <Paperclip className="size-4 shrink-0 text-muted" aria-label="Has attachments" />}
-                        </Link>
+                        <RecordCard record={item} />
                       </li>
                     ))}
                   </ul>

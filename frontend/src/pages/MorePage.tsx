@@ -50,10 +50,10 @@ export function MorePage() {
 
       <section className="space-y-3" aria-labelledby="backup-heading">
         <div>
-          <h2 id="backup-heading" className="text-xl font-semibold">
+          <h2 id="backup-heading" className="section-heading">
             Backup and export
           </h2>
-          <p className="text-sm text-muted">Keep a copy of your records somewhere safe. Backups contain private medical data.</p>
+          <p className="page-subtitle">Keep a copy of your records somewhere safe. Backups contain private medical data.</p>
         </div>
         <DownloadLink href="/api/backup" icon={Database} title="Full backup (ZIP)" hint="Database and all uploaded files" />
         <DownloadLink href="/api/export/json" icon={FileJson} title="Export records (JSON)" hint="Structured data without the files" />

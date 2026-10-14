@@ -1,6 +1,7 @@
 import { FolderOpen, Menu, Plus, Search } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { RecordCard } from '@/components/records/RecordCard'
 import { LinkButton } from '@/components/ui/Button'
 import { CardSkeletons, EmptyState, ErrorMessage } from '@/components/ui/feedback'
@@ -18,16 +19,16 @@ export function HomePage() {
   }
 
   return (
-    <div className="space-y-6 pt-2">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold leading-tight">Medical Records</h1>
-          <p className="text-sm text-muted">Your private health journal</p>
-        </div>
-        <Link to="/more" aria-label="More options" className="grid size-12 place-items-center rounded-full border border-line bg-white text-ink hover:bg-wash">
-          <Menu className="size-6" />
-        </Link>
-      </header>
+    <div className="space-y-6">
+      <PageHeader
+        title="Medical Records"
+        subtitle="Your private health journal"
+        action={
+          <Link to="/more" aria-label="More options" className="grid size-11 place-items-center rounded-full text-ink hover:bg-wash">
+            <Menu className="size-6" />
+          </Link>
+        }
+      />
 
       <form role="search" onSubmit={search} className="relative">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-muted" aria-hidden />
@@ -50,7 +51,7 @@ export function HomePage() {
 
       <section className="space-y-3" aria-labelledby="recent-heading">
         <div className="flex items-baseline justify-between">
-          <h2 id="recent-heading" className="text-xl font-semibold">
+          <h2 id="recent-heading" className="section-heading">
             Recent records
           </h2>
           {recent.data && recent.data.total > 0 && (

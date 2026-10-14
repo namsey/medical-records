@@ -1,16 +1,22 @@
-===== FILE: ROADMAP.md =====
 # Medical Records: Roadmap
 
 Work top to bottom. Each item lists what "done" means.
 
 ## Level 1: Visual fixes
-- [ ] #1 Bottom padding: no content hidden behind the bottom nav (safe-area aware, shared variable for nav height).
-- [ ] #2 Centred page container: equal gutters on every screen; one shared container.
-- [ ] #3 Consistent type scale: shared page title / subtitle / section heading styles.
-- [ ] #4 Bottom nav labels share one baseline; the raised + button doesn't push its label down.
-- [ ] #5 Record card: meta line "Type · Date · N files", one vertically centred chevron, title truncates.
-- [ ] #6 Distinct category colours from one central type→colour map; no two types similar; none look like the primary action colour.
-- [ ] #7 Accessibility basics: aria-labels on icon buttons, nav landmark + aria-current, contrast ≥ 4.5:1 for text, 44px targets, focus-visible.
+- [x] #1 Bottom padding: no content hidden behind the bottom nav (safe-area aware, shared variable for nav height).
+  - Notes: --bottom-nav-height in index.css is the single source: the nav's height, the shared main's .pb-bottom-nav padding (nav height + safe-area inset + 16px) and the toast position all derive from it; viewport-fit=cover is set. Re-verified on all 14 screens at 360/430px with 0 and 34px insets: ≥16px clear above the nav after scrolling to the bottom.
+- [x] #2 Centred page container: equal gutters on every screen; one shared container.
+  - Notes: One shared .page-container (centred, max-w-2xl, 16px gutters) in index.css, used by the app layout, the sign-in page and the server-error screen (sign-in keeps a narrower centred column). Desktop scrollbars reserve space on both edges (scrollbar-gutter). Re-verified on all 14 screens at 360/430px: equal 16px gutters, no horizontal scroll.
+- [x] #3 Consistent type scale: shared page title / subtitle / section heading styles.
+  - Notes: Four shared classes in index.css: .page-title (serif 24px), .page-subtitle (14px muted), .section-heading (serif 18px) and .group-heading (14px muted, Timeline day headers). Every screen, including sign-in, plus dialogs, form sections and empty states, uses them; Home uses the shared PageHeader (its menu button is the header action). Re-verified by measuring headings on all screens: exactly one style per role.
+- [x] #4 Bottom nav labels share one baseline; the raised + button doesn't push its label down.
+  - Notes: Every nav item has the same 28px icon slot; the + circle (44px, paper-coloured ring) rises out of its slot above the bar instead of pushing its label down. Re-verified: all labels end on the same baseline at 360/390/430px.
+- [x] #5 Record card: meta line "Type · Date · N files", one vertically centred chevron, title truncates.
+  - Notes: One shared RecordCard, used by Home, Records, Search and Timeline: meta reads "Type · Date · N files" (count only when there are files, pluralised), one vertically centred chevron, title truncates. Meta parts stay whole, so at 360px the line wraps between parts. Re-verified with tests (meta text, single chevron) and screenshots at 360/430px.
+- [x] #6 Distinct category colours from one central type→colour map; no two types similar; none look like the primary action colour.
+  - Notes: Type colours are --color-type-<type> / -soft tokens in index.css (the one central map), wired through RECORD_TYPE_INFO and used by every icon tile and badge. Blue, violet, amber, red, brown, magenta and neutral grey; replaces two greys and two blues. Re-verified: hues ≥70° from the teal brand/action colour, nearest pair ΔE(OKLab) ≈ 0.10, each strong colour ≥5:1 on its tint and the page; a test checks each type has its own tokens.
+- [x] #7 Accessibility basics: aria-labels on icon buttons, nav landmark + aria-current, contrast ≥ 4.5:1 for text, 44px targets, focus-visible.
+  - Notes: Audited 22 screens/states (incl. document viewer, doctor/lab forms, filter panels, dialogs, sign-in) with axe-core (WCAG 2.1 AA + best practice) plus scans for <44px targets, unlabelled icon controls and placeholder contrast: 0 issues. Muted text token is #5d6679 (≥5:1 on paper, card, wash), placeholders use it at full strength (5.8:1); chips, small buttons, tag links/suggestions and phone/email links are ≥44px; tag remove buttons have a 44px hit area. Nav landmark has aria-current; focus-visible rings throughout.
 
 ## Level 2: UX and structure
 - [ ] #8 Add record screen has a close/back control; cancelling with unsaved changes asks for confirmation.

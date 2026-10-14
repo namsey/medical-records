@@ -62,13 +62,13 @@ export function RecordDetailPage() {
 
       {record.personal_notes && (
         <section className="space-y-2">
-          <h2 className="text-lg font-semibold">Personal notes</h2>
+          <h2 className="section-heading">Personal notes</h2>
           <p className="card whitespace-pre-line break-words bg-wash p-4 leading-relaxed">{record.personal_notes}</p>
         </section>
       )}
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Attachments</h2>
+        <h2 className="section-heading">Attachments</h2>
         {record.documents.length === 0 && <p className="text-sm text-muted">No files attached.</p>}
         <DocumentList documents={record.documents} />
         <FilePicker label="Add files" files={newFiles} onChange={setNewFiles} disabled={upload.isPending} />

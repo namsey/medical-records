@@ -14,7 +14,7 @@ interface RecordTypeInfo {
   label: string
   plural: string
   icon: LucideIcon
-  /** Tailwind classes for the small coloured badge / icon tile. */
+  /** Classes for the coloured badge / icon tile, from the --color-type-* tokens in index.css. */
   tone: string
   hint: string
 }
@@ -34,49 +34,49 @@ export const RECORD_TYPE_INFO: Record<RecordType, RecordTypeInfo> = {
     label: 'Doctor Visit',
     plural: 'Doctor Visits',
     icon: Stethoscope,
-    tone: 'bg-sky-100 text-sky-800',
+    tone: 'bg-type-doctor-visit-soft text-type-doctor-visit',
     hint: 'Consultation, symptoms, notes',
   },
   prescription: {
     label: 'Prescription',
     plural: 'Prescriptions',
     icon: Pill,
-    tone: 'bg-violet-100 text-violet-800',
+    tone: 'bg-type-prescription-soft text-type-prescription',
     hint: 'Medicines and instructions',
   },
   lab_report: {
     label: 'Lab Report',
     plural: 'Lab Reports',
     icon: FlaskConical,
-    tone: 'bg-amber-100 text-amber-800',
+    tone: 'bg-type-lab-report-soft text-type-lab-report',
     hint: 'Blood tests and results',
   },
   diagnosis: {
     label: 'Diagnosis',
     plural: 'Diagnoses',
     icon: Activity,
-    tone: 'bg-rose-100 text-rose-800',
+    tone: 'bg-type-diagnosis-soft text-type-diagnosis',
     hint: 'A condition and its treatment',
   },
   medical_document: {
     label: 'Medical Document',
     plural: 'Medical Documents',
     icon: FileText,
-    tone: 'bg-slate-200 text-slate-800',
+    tone: 'bg-type-medical-document-soft text-type-medical-document',
     hint: 'Certificates, discharge summaries',
   },
   scan: {
     label: 'Scan',
     plural: 'Scans',
     icon: ScanLine,
-    tone: 'bg-indigo-100 text-indigo-800',
+    tone: 'bg-type-scan-soft text-type-scan',
     hint: 'MRI, CT, X-ray, ultrasound',
   },
   other: {
     label: 'Other',
     plural: 'Other',
     icon: Shapes,
-    tone: 'bg-stone-200 text-stone-800',
+    tone: 'bg-type-other-soft text-type-other',
     hint: 'Anything else',
   },
 }
