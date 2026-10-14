@@ -43,5 +43,5 @@ export function AddRecordPage() {
 
   if (!isRecordType(type)) return <Navigate to="/add" replace />
 
-  return <RecordForm key={type} title={`New ${RECORD_TYPE_INFO[type].label.toLowerCase()}`} initial={emptyForm(type)} />
+  return <RecordForm key={type} initial={emptyForm(type)} />
 }

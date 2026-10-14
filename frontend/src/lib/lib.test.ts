@@ -3,7 +3,8 @@ import { ApiError, request } from './api'
 import { formatDate, formatDayMonth, formatFileSize, orNull, pluralize, todayIso } from './format'
 import { EMPTY_FILTERS, filtersToParams } from '@/hooks/queries'
 import { describeCount, groupByMonth } from './recordList'
-import { FORM_CONFIG, emptyForm, emptyMedicine, formFromRecord, formToInput, validateForm } from './recordForm'
+import { suggestRecordType } from './typeSuggestion'
+import { FORM_CONFIG, changeRecordType, droppedDetails, emptyForm, emptyMedicine, formFromRecord, formToInput, validateForm } from './recordForm'
 import type { MedicalRecord, RecordSummary } from './types'
 
 describe('format', () => {
@@ -175,5 +176,41 @@ describe('record list helpers', () => {
     expect(params.get('date_to')).toBe('2026-12-31')
     expect(params.get('sort')).toBe('oldest')
     expect(filtersToParams(EMPTY_FILTERS).toString()).toBe('')
+  })
+})
+
+describe('record type changes', () => {
+  it('suggests a type from title keywords', () => {
+    expect(suggestRecordType('Knee MRI')).toBe('scan')
+    expect(suggestRecordType('Ultrasound pelvis')).toBe('scan')
+    expect(suggestRecordType('Chest X-ray')).toBe('scan')
+    expect(suggestRecordType('CBC')).toBe('lab_report')
+    expect(suggestRecordType('Blood test results')).toBe('lab_report')
+    expect(suggestRecordType('Lipid profile')).toBe('lab_report')
+    expect(suggestRecordType('Complete Body CheckUp')).toBe('lab_report')
+    expect(suggestRecordType('Common Cold prescription')).toBe('prescription')
+    expect(suggestRecordType('Discharge summary')).toBe('medical_document')
+    expect(suggestRecordType('Eye checkup')).toBe('doctor_visit')
+    expect(suggestRecordType('Scandinavia trip notes')).toBeNull()
+    expect(suggestRecordType('')).toBeNull()
+  })
+
+  it('lists the details a new type would drop, and restores them when switched back', () => {
+    const rx = { ...emptyForm('prescription'), reason: 'Cold', doctorNotes: 'Rest' }
+    rx.medicines = [{ ...rx.medicines[0]!, name: 'Paracetamol' }]
+    expect(droppedDetails(rx, 'prescription')).toEqual([])
+
+    const asScan = changeRecordType(rx, 'scan')
+    expect(droppedDetails(asScan, 'prescription')).toEqual(['Diagnosis / reason', "Doctor's instructions", '1 medicine'])
+    expect(formToInput(asScan)).toMatchObject({ record_type: 'scan', reason: null, medicines: [] })
+
+    const back = changeRecordType(asScan, 'prescription')
+    expect(droppedDetails(back, 'prescription')).toEqual([])
+    expect(formToInput(back).medicines.map((m) => m.name)).toEqual(['Paracetamol'])
+  })
+
+  it('adds an empty medicine or result row when switching to a type that needs one', () => {
+    expect(changeRecordType(emptyForm('scan'), 'prescription').medicines).toHaveLength(1)
+    expect(changeRecordType(emptyForm('scan'), 'lab_report').results).toHaveLength(1)
   })
 })

@@ -1,27 +1,26 @@
+import { X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGoBack } from '@/hooks/useGoBack'
 import { uploadDocument, useCreateRecord, useDoctors, useInvalidateRecordData, useUpdateRecord } from '@/hooks/queries'
 import { errorMessage } from '@/lib/api'
-import { FORM_CONFIG, TITLE_REQUIRED, fieldLabel, formToInput, validateForm, type FieldKey, type RecordFormState } from '@/lib/recordForm'
-import { RECORD_TYPE_INFO } from '@/lib/recordTypes'
-import type { Doctor, MedicalRecord } from '@/lib/types'
+import { FORM_CONFIG, TITLE_REQUIRED, changeRecordType, droppedDetails, fieldLabel, formToInput, validateForm, type FieldKey, type RecordFormState } from '@/lib/recordForm'
+import { RECORD_TYPES, RECORD_TYPE_INFO } from '@/lib/recordTypes'
+import { suggestRecordType } from '@/lib/typeSuggestion'
+import type { Doctor, MedicalRecord, RecordType } from '@/lib/types'
 import { DocumentList } from '../documents/DocumentList'
 import { PageHeader } from '../layout/PageHeader'
 import { FilePicker } from '../documents/FilePicker'
 import { Button } from '../ui/Button'
 import { ErrorMessage } from '../ui/feedback'
 import { ConfirmDialog } from '../ui/Modal'
-import { FormSection, TextArea, TextInput } from '../ui/Field'
+import { FormSection, SelectInput, TextArea, TextInput } from '../ui/Field'
 import { useToast } from '../ui/Toast'
 import { DoctorPicker, LabPicker } from './DirectoryPicker'
 import { LabResultsEditor, MedicinesEditor } from './ListEditors'
 import { TagInput } from './TagInput'
-import { TypeBadge } from './RecordCard'
 
 interface RecordFormProps {
-  /** Page title shown in the form's header. */
-  title: string
   initial: RecordFormState
   /** Present when editing; absent when creating. */
   existing?: MedicalRecord
@@ -55,7 +54,7 @@ const TEXT_KEYS: Record<TextKey, keyof RecordFormState> = {
   reportDate: 'reportDate',
 }
 
-export function RecordForm({ title, initial, existing }: RecordFormProps) {
+export function RecordForm({ initial, existing }: RecordFormProps) {
   const [form, setForm] = useState(initial)
   const [files, setFiles] = useState<File[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -63,6 +62,8 @@ export function RecordForm({ title, initial, existing }: RecordFormProps) {
   const [saving, setSaving] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
   const [confirmingLeave, setConfirmingLeave] = useState(false)
+  const [confirmingDrop, setConfirmingDrop] = useState(false)
+  const [dismissedSuggestion, setDismissedSuggestion] = useState<RecordType | null>(null)
   const topRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const toast = useToast()
@@ -89,6 +90,11 @@ export function RecordForm({ title, initial, existing }: RecordFormProps) {
 
   const config = FORM_CONFIG[form.recordType]
   const titleRequired = TITLE_REQUIRED.includes(form.recordType)
+  const typeLabel = RECORD_TYPE_INFO[form.recordType].label
+  const dropped = droppedDetails(form, initial.recordType)
+  // When adding, suggest a type from the title; never switch on the user's behalf.
+  const suggested = existing ? null : suggestRecordType(form.title)
+  const suggestion = suggested && suggested !== form.recordType && suggested !== dismissedSuggestion ? suggested : null
 
   function set<K extends keyof RecordFormState>(key: K, value: RecordFormState[K]) {
     setForm((previous) => ({ ...previous, [key]: value }))
@@ -104,7 +110,7 @@ export function RecordForm({ title, initial, existing }: RecordFormProps) {
     }))
   }
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault()
     setSubmitError(null)
     const found = validateForm(form)
@@ -114,7 +120,12 @@ export function RecordForm({ title, initial, existing }: RecordFormProps) {
       topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       return
     }
+    // A changed record type can leave details the new type does not store; never drop them silently.
+    if (dropped.length > 0) setConfirmingDrop(true)
+    else void save()
+  }
 
+  async function save() {
     setSaving(true)
     try {
       const input = formToInput(form)
@@ -169,17 +180,24 @@ export function RecordForm({ title, initial, existing }: RecordFormProps) {
 
   return (
     <>
-      <PageHeader title={title} onBack={saving ? undefined : leave} backIcon={existing ? 'arrow' : 'close'} />
+      <PageHeader title={existing ? 'Edit record' : `New ${typeLabel.toLowerCase()}`} onBack={saving ? undefined : leave} backIcon={existing ? 'arrow' : 'close'} />
       <form onSubmit={submit} noValidate className="space-y-4">
         <div ref={topRef} className="scroll-mt-20" />
-        <div className="flex items-center gap-2">
-          <TypeBadge type={form.recordType} />
-          {existing && <span className="text-sm text-muted">Editing</span>}
-        </div>
-
         {submitError && <ErrorMessage message={submitError} />}
 
         <FormSection>
+          <SelectInput label="Record type" value={form.recordType} onChange={(e) => setForm((previous) => changeRecordType(previous, e.target.value as RecordType))}>
+            {RECORD_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {RECORD_TYPE_INFO[type].label}
+              </option>
+            ))}
+          </SelectInput>
+          {dropped.length > 0 && (
+            <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+              A {typeLabel.toLowerCase()} does not keep: {dropped.join(', ')}. They will be removed when you save. Switch back to {RECORD_TYPE_INFO[initial.recordType].label} to keep them.
+            </p>
+          )}
           <TextInput
             label="Title"
             required={titleRequired}
@@ -190,6 +208,17 @@ export function RecordForm({ title, initial, existing }: RecordFormProps) {
             placeholder={form.recordType === 'scan' ? 'e.g. Knee MRI' : RECORD_TYPE_INFO[form.recordType].label}
             onChange={(e) => set('title', e.target.value)}
           />
+          {suggestion && (
+            <div role="status" className="flex items-center gap-2 rounded-xl bg-brand-50 py-1 pl-3 pr-1 text-sm text-brand-800">
+              <p className="min-w-0 flex-1">This looks like a {RECORD_TYPE_INFO[suggestion].label.toLowerCase()}.</p>
+              <Button variant="ghost" size="sm" onClick={() => setForm((previous) => changeRecordType(previous, suggestion))}>
+                Switch to {RECORD_TYPE_INFO[suggestion].label}
+              </Button>
+              <button type="button" onClick={() => setDismissedSuggestion(suggestion)} aria-label="Dismiss suggestion" className="grid size-10 shrink-0 place-items-center rounded-full hover:bg-brand-100">
+                <X className="size-4" aria-hidden />
+              </button>
+            </div>
+          )}
           <TextInput label={config.dateLabel} type="date" required value={form.recordDate} error={errors.recordDate} onChange={(e) => set('recordDate', e.target.value)} />
           {config.fields.map(renderField)}
         </FormSection>
@@ -224,6 +253,18 @@ export function RecordForm({ title, initial, existing }: RecordFormProps) {
           </Button>
         </div>
       </form>
+      <ConfirmDialog
+        open={confirmingDrop}
+        title="Remove details?"
+        message={`Saving as a ${typeLabel.toLowerCase()} removes: ${dropped.join(', ')}.`}
+        confirmLabel="Save and remove"
+        cancelLabel="Go back"
+        onConfirm={() => {
+          setConfirmingDrop(false)
+          void save()
+        }}
+        onCancel={() => setConfirmingDrop(false)}
+      />
       <ConfirmDialog
         open={confirmingLeave}
         title="Discard changes?"

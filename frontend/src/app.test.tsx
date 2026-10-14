@@ -283,6 +283,69 @@ describe('adding a record', () => {
   })
 })
 
+describe('record type', () => {
+  const formRoutes = { ...authed, 'GET /api/doctors': [], 'GET /api/labs': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] } }
+
+  it('suggests a type from the title when adding, without forcing it', async () => {
+    mockApi(formRoutes)
+    renderApp('/add/doctor_visit')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Title'), 'Knee MRI')
+    expect(await screen.findByText('This looks like a scan.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'New doctor visit' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Switch to Scan' }))
+    expect(screen.getByRole('heading', { name: 'New scan' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Record type')).toHaveValue('scan')
+    expect(screen.queryByText(/looks like/)).not.toBeInTheDocument()
+  })
+
+  it('lets a suggestion be dismissed', async () => {
+    mockApi(formRoutes)
+    renderApp('/add/doctor_visit')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Title'), 'CBC')
+    await user.click(await screen.findByRole('button', { name: 'Dismiss suggestion' }))
+    expect(screen.queryByText(/looks like/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Record type')).toHaveValue('doctor_visit')
+  })
+
+  it('changes the type of a saved record, confirming before details are removed', async () => {
+    const rx = fullRecord({
+      record_type: 'prescription', title: 'Cold prescription', reason: 'Common cold', test_name: null, summary: null, report_date: null, results: [], documents: [],
+      medicines: [{ id: 'm1', name: 'Paracetamol', dosage: '500 mg', frequency: null, duration: null, start_date: null, end_date: null, instructions: null }],
+    })
+    const calls = mockApi({ ...formRoutes, 'GET /api/records/r1': rx, 'PUT /api/records/r1': (call) => ({ json: { ...rx, ...(call.body as object), medicines: [] } }) })
+    renderApp('/records/r1/edit')
+    const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText('Record type'), 'doctor_visit')
+    expect(screen.getByRole('status')).toHaveTextContent('A doctor visit does not keep: 1 medicine')
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Remove details?' })
+    expect(dialog).toHaveTextContent('1 medicine')
+    await user.click(within(dialog).getByRole('button', { name: 'Go back' }))
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save and remove' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    expect(calls.find((c) => c.method === 'PUT')!.body).toMatchObject({ record_type: 'doctor_visit', reason: 'Common cold', medicines: [] })
+  })
+
+  it('saves a type change without asking when nothing would be lost', async () => {
+    const scan = fullRecord({ record_type: 'scan', title: 'Knee MRI', test_name: null, summary: null, report_date: null, results: [], documents: [], description: 'Mild tear' })
+    const calls = mockApi({ ...formRoutes, 'GET /api/records/r1': scan, 'PUT /api/records/r1': (call) => ({ json: { ...scan, ...(call.body as object) } }) })
+    renderApp('/records/r1/edit')
+    const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText('Record type'), 'medical_document')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(calls.find((c) => c.method === 'PUT')!.body).toMatchObject({ record_type: 'medical_document', description: 'Mild tear' })
+  })
+})
+
 describe('record detail', () => {
   const routes = {
     ...authed,
