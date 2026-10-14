@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { fullRecord, mockApi, renderApp, summary, USER } from './test/helpers'
@@ -91,6 +91,51 @@ describe('home and records', () => {
     mockApi({ ...authed, 'GET /api/search': emptyPage, 'GET /api/records': emptyPage, 'GET /api/tags': [] })
     renderApp('/search?q=zzz')
     expect(await screen.findByText('No matching records')).toBeInTheDocument()
+  })
+})
+
+describe('record type sheet', () => {
+  async function openSheet() {
+    mockApi({ ...authed, 'GET /api/records': emptyPage, 'GET /api/doctors': [], 'GET /api/labs': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] } })
+    renderApp('/')
+    const nav = await screen.findByRole('navigation', { name: 'Main' })
+    await userEvent.click(within(nav).getByRole('button', { name: 'Add record' }))
+    return screen.findByRole('dialog', { name: 'Add record' })
+  }
+
+  it('shows every record type and opens the chosen form', async () => {
+    const sheet = await openSheet()
+    for (const label of ['Doctor Visit', 'Prescription', 'Lab Report', 'Diagnosis', 'Medical Document', 'Scan', 'Other']) {
+      expect(within(sheet).getByRole('link', { name: label })).toBeInTheDocument()
+    }
+    await userEvent.click(within(sheet).getByRole('link', { name: 'Scan' }))
+    expect(await screen.findByRole('heading', { name: 'New scan' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('closes on Escape', async () => {
+    await openSheet()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('closes on a backdrop tap', async () => {
+    const sheet = await openSheet()
+    await userEvent.click(sheet.previousElementSibling as HTMLElement)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('closes when swiped down, but not on a short drag', async () => {
+    const sheet = await openSheet()
+    fireEvent.touchStart(sheet, { touches: [{ clientY: 100 }] })
+    fireEvent.touchMove(sheet, { touches: [{ clientY: 130 }] })
+    fireEvent.touchEnd(sheet)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    fireEvent.touchStart(sheet, { touches: [{ clientY: 100 }] })
+    fireEvent.touchMove(sheet, { touches: [{ clientY: 260 }] })
+    fireEvent.touchEnd(sheet)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 })
 
