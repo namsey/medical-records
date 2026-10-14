@@ -484,6 +484,10 @@ describe('timeline', () => {
     expect(screen.getAllByText('05 Sep')).toHaveLength(1) // two records on one day share one date label
     expect(screen.getByText('10 Sep')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Blood Test/ })).toHaveAttribute('href', '/records/a')
+    // Timeline uses the shared record card: "Type · Date · N files" and one chevron.
+    const visit = screen.getByRole('link', { name: /Doctor Visit/ })
+    expect(within(visit).getByText(paragraph('Doctor Visit · 05 Sep 2026 · 1 file'))).toBeInTheDocument()
+    expect(visit.querySelectorAll('svg.lucide-chevron-right')).toHaveLength(1)
   })
 })
 

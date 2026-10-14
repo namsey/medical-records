@@ -3,7 +3,7 @@ import { Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDate, pluralize } from '@/lib/format'
 import { RECORD_TYPE_INFO } from '@/lib/recordTypes'
-import type { RecordSummary, RecordType } from '@/lib/types'
+import type { RecordSummary, RecordType, TimelineItem } from '@/lib/types'
 import { TagPill } from '../ui/Chip'
 
 export function TypeIcon({ type, className = 'size-11' }: { type: RecordType; className?: string }) {
@@ -27,9 +27,12 @@ export function TypeBadge({ type }: { type: RecordType }) {
 
 const MAX_TAGS_SHOWN = 3
 
-export function RecordCard({ record }: { record: RecordSummary }) {
-  const who = [record.doctor_name, record.lab_name, record.hospital].filter(Boolean)
-  const extraTags = record.tags.length - MAX_TAGS_SHOWN
+/** The one record card, used by every list (timeline items carry no hospital or tags). */
+export function RecordCard({ record }: { record: RecordSummary | TimelineItem }) {
+  const hospital = 'hospital' in record ? record.hospital : null
+  const tags = 'tags' in record ? record.tags : []
+  const who = [record.doctor_name, record.lab_name, hospital].filter(Boolean)
+  const extraTags = tags.length - MAX_TAGS_SHOWN
   const meta = [RECORD_TYPE_INFO[record.record_type].label, formatDate(record.record_date)]
   if (record.document_count > 0) meta.push(pluralize(record.document_count, 'file'))
   return (
@@ -47,9 +50,9 @@ export function RecordCard({ record }: { record: RecordSummary }) {
           ))}
         </p>
         {who.length > 0 && <p className="truncate text-sm text-muted">{who.join(' · ')}</p>}
-        {record.tags.length > 0 && (
+        {tags.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {record.tags.slice(0, MAX_TAGS_SHOWN).map((tag) => (
+            {tags.slice(0, MAX_TAGS_SHOWN).map((tag) => (
               <TagPill key={tag}>{tag}</TagPill>
             ))}
             {extraTags > 0 && <span className="py-1 text-xs text-muted">+{extraTags}</span>}
