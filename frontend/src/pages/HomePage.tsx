@@ -1,6 +1,5 @@
-import { FolderOpen, Menu, Plus, Search } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { FolderOpen } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { RecordCard } from '@/components/records/RecordCard'
 import { LinkButton } from '@/components/ui/Button'
@@ -9,45 +8,11 @@ import { useRecentRecords } from '@/hooks/queries'
 import { errorMessage } from '@/lib/api'
 
 export function HomePage() {
-  const [text, setText] = useState('')
-  const navigate = useNavigate()
   const recent = useRecentRecords(8)
 
-  function search(event: FormEvent) {
-    event.preventDefault()
-    navigate(text.trim() ? `/search?q=${encodeURIComponent(text.trim())}` : '/search')
-  }
-
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Medical Records"
-        subtitle="Your private health journal"
-        action={
-          <Link to="/more" aria-label="More options" className="grid size-11 place-items-center rounded-full text-ink hover:bg-wash">
-            <Menu className="size-6" />
-          </Link>
-        }
-      />
-
-      <form role="search" onSubmit={search} className="relative">
-        <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-muted" aria-hidden />
-        <input
-          type="search"
-          enterKeyHint="search"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder="Search doctor, medicine, test…"
-          aria-label="Search records"
-          maxLength={200}
-          className="field-input min-h-14 rounded-2xl pl-11"
-        />
-      </form>
-
-      <LinkButton to="/add" className="w-full min-h-14 text-lg">
-        <Plus className="size-6" aria-hidden />
-        Add record
-      </LinkButton>
+    <>
+      <PageHeader title="Medical Records" subtitle="Your private health journal" />
 
       <section className="space-y-3" aria-labelledby="recent-heading">
         <div className="flex items-baseline justify-between">
@@ -78,6 +43,6 @@ export function HomePage() {
           </ul>
         )}
       </section>
-    </div>
+    </>
   )
 }

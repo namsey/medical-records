@@ -1,13 +1,15 @@
-import { FileSearch, FolderOpen, Search, X } from 'lucide-react'
+import { FolderOpen, FunnelX, Search, SearchX, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useRecordFilters, countActiveFilters } from '@/hooks/useRecordFilters'
-import { useRecordList } from '@/hooks/queries'
+import { EMPTY_FILTERS, useRecordList } from '@/hooks/queries'
 import { useDebounced } from '@/hooks/useDebounced'
 import { errorMessage } from '@/lib/api'
-import { pluralize } from '@/lib/format'
+import { describeCount, describeFilters, groupByMonth } from '@/lib/recordList'
+import type { RecordSort } from '@/lib/types'
 import { Button, LinkButton } from '../ui/Button'
 import { CardSkeletons, EmptyState, ErrorMessage } from '../ui/feedback'
 import { FilterPanel } from './FilterPanel'
+import { QuickFilters } from './QuickFilters'
 import { RecordCard } from './RecordCard'
 
 interface RecordBrowserProps {
@@ -37,7 +39,18 @@ export function RecordBrowser({ withSearchBox }: RecordBrowserProps) {
   const query = useRecordList(withSearchBox ? filters : { ...filters, q: '' })
   const records = query.data?.pages.flatMap((page) => page.items) ?? []
   const total = query.data?.pages[0]?.total ?? 0
-  const hasCriteria = Boolean(filters.q.trim()) || countActiveFilters(filters) > 0
+  const searching = withSearchBox && Boolean(filters.q.trim())
+  const filtering = countActiveFilters(filters) > 0
+
+  function clearSearch() {
+    setText('')
+    setFilters({ ...filters, q: '' })
+    inputRef.current?.focus()
+  }
+
+  function clearFilters() {
+    setFilters({ ...EMPTY_FILTERS, q: filters.q, sort: filters.sort })
+  }
 
   return (
     <div className="space-y-3">
@@ -78,7 +91,9 @@ export function RecordBrowser({ withSearchBox }: RecordBrowserProps) {
         </form>
       )}
 
-      <FilterPanel filters={filters} onChange={setFilters} />
+      {!withSearchBox && <QuickFilters filters={filters} onChange={setFilters} />}
+
+      <FilterPanel filters={filters} onChange={setFilters} hideTypes={!withSearchBox} />
 
       {query.isPending && <CardSkeletons />}
 
@@ -86,14 +101,36 @@ export function RecordBrowser({ withSearchBox }: RecordBrowserProps) {
 
       {query.isSuccess && records.length === 0 && (
         <>
-          {hasCriteria ? (
+          {searching ? (
             <EmptyState
-              icon={FileSearch}
-              title="No matching records"
-              description="Try different words or clear some filters."
+              icon={SearchX}
+              title={`No results for “${filters.q.trim()}”`}
+              description={
+                filtering
+                  ? `Nothing matches with the filters on (${describeFilters(filters)}). Try clearing them, or search for something else.`
+                  : 'Check the spelling, or search for a doctor, medicine, test, diagnosis or tag.'
+              }
               action={
-                <Button variant="secondary" onClick={() => { setText(''); setFilters({ q: '', types: [], tags: [], dateFrom: '', dateTo: '' }) }}>
-                  Clear search and filters
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button variant="secondary" onClick={clearSearch}>
+                    Clear search
+                  </Button>
+                  {filtering && (
+                    <Button variant="secondary" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  )}
+                </div>
+              }
+            />
+          ) : filtering ? (
+            <EmptyState
+              icon={FunnelX}
+              title="No records match these filters"
+              description={`Nothing found for ${describeFilters(filters)}. Try another filter, or show everything.`}
+              action={
+                <Button variant="secondary" onClick={clearFilters}>
+                  Clear filters
                 </Button>
               }
             />
@@ -101,8 +138,8 @@ export function RecordBrowser({ withSearchBox }: RecordBrowserProps) {
             <EmptyState
               icon={FolderOpen}
               title="No records yet"
-              description="Add your first prescription, lab report or doctor visit."
-              action={<LinkButton to="/add">Add a record</LinkButton>}
+              description="Add your first prescription, lab report or doctor visit, and it will show up here."
+              action={<LinkButton to="/add">Add your first record</LinkButton>}
             />
           )}
         </>
@@ -110,17 +147,48 @@ export function RecordBrowser({ withSearchBox }: RecordBrowserProps) {
 
       {records.length > 0 && (
         <>
-          <p className="px-1 text-sm text-muted" aria-live="polite">
-            {pluralize(total, 'record')}
-            {hasCriteria ? ' found' : ''}
-          </p>
-          <ul className="space-y-3">
-            {records.map((record) => (
-              <li key={record.id}>
-                <RecordCard record={record} />
-              </li>
-            ))}
-          </ul>
+          <div className="flex items-center justify-between gap-2 px-1">
+            <p className="text-sm text-muted" aria-live="polite">
+              {describeCount(total, withSearchBox ? filters : { ...filters, q: '' })}
+            </p>
+            {!withSearchBox && (
+              <select
+                aria-label="Sort records"
+                value={filters.sort}
+                onChange={(event) => setFilters({ ...filters, sort: event.target.value as RecordSort })}
+                className="min-h-11 shrink-0 rounded-lg bg-transparent px-1 font-semibold text-ink hover:bg-wash"
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+            )}
+          </div>
+          {withSearchBox ? (
+            <ul className="space-y-3">
+              {records.map((record) => (
+                <li key={record.id}>
+                  <RecordCard record={record} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="space-y-4">
+              {groupByMonth(records).map((group) => (
+                <section key={group.key} aria-labelledby={`month-${group.key}`} className="space-y-2">
+                  <h2 id={`month-${group.key}`} className="group-heading px-1">
+                    {group.label}
+                  </h2>
+                  <ul className="space-y-3">
+                    {group.records.map((record) => (
+                      <li key={record.id}>
+                        <RecordCard record={record} />
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          )}
           {query.hasNextPage && (
             <Button variant="secondary" className="w-full" loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
               Load more

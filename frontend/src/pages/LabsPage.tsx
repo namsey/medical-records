@@ -22,7 +22,7 @@ export function LabsPage() {
     <>
       <PageHeader
         title="Laboratories"
-        back="/more"
+        back="/profile"
         action={
           <Button size="sm" onClick={() => setEditing({ lab: null })}>
             <Plus className="size-4" aria-hidden />

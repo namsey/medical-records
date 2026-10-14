@@ -19,6 +19,7 @@ PRIVATE_GET_PATHS = [
     "/api/doctors",
     "/api/labs",
     "/api/tags",
+    "/api/years",
     "/api/documents/abc",
     "/api/documents/abc/view",
     "/api/documents/abc/download",

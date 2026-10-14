@@ -22,7 +22,7 @@ export function DoctorsPage() {
     <>
       <PageHeader
         title="Doctors"
-        back="/more"
+        back="/profile"
         action={
           <Button size="sm" onClick={() => setEditing({ doctor: null })}>
             <Plus className="size-4" aria-hidden />

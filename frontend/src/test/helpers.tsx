@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { vi } from 'vitest'
 import { App } from '@/App'
 import { ToastProvider } from '@/components/ui/Toast'
@@ -12,6 +12,7 @@ import type { MedicalRecord, RecordSummary } from '@/lib/types'
 export interface RecordedCall {
   method: string
   path: string
+  params: URLSearchParams
   body: unknown
   headers: Record<string, string>
 }
@@ -33,7 +34,7 @@ export function mockApi(routes: Record<string, Route>): RecordedCall[] {
       const method = (init?.method ?? 'GET').toUpperCase()
       let body: unknown = init?.body
       if (typeof body === 'string') body = JSON.parse(body)
-      const call: RecordedCall = { method, path: url.pathname, body, headers: (init?.headers ?? {}) as Record<string, string> }
+      const call: RecordedCall = { method, path: url.pathname, params: url.searchParams, body, headers: (init?.headers ?? {}) as Record<string, string> }
       calls.push(call)
       const route = routes[`${method} ${url.pathname}`]
       if (route === undefined) return new Response(JSON.stringify({ detail: `No mock for ${method} ${url.pathname}` }), { status: 404 })
@@ -56,13 +57,23 @@ export function renderApp(path = '/') {
     mutationCache: new MutationCache(),
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
   })
+  // Same shape as main.tsx: a data router with one catch-all route around the app's own <Routes>.
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        element: (
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        ),
+      },
+    ],
+    { initialEntries: [path] },
+  )
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
-        <ToastProvider>
-          <App />
-        </ToastProvider>
-      </MemoryRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   )
 }

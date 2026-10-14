@@ -1,6 +1,7 @@
 import { ChevronRight } from 'lucide-react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { useGoBack } from '@/hooks/useGoBack'
 import { RecordForm } from '@/components/records/RecordForm'
 import { TypeIcon } from '@/components/records/RecordCard'
 import { emptyForm } from '@/lib/recordForm'
@@ -13,11 +14,12 @@ function isRecordType(value: string | undefined): value is RecordType {
 
 export function AddRecordPage() {
   const { type } = useParams()
+  const goBack = useGoBack('/')
 
   if (type === undefined) {
     return (
       <>
-        <PageHeader title="Add record" subtitle="What would you like to add?" />
+        <PageHeader title="Add record" subtitle="What would you like to add?" onBack={goBack} backIcon="close" />
         <ul className="space-y-3">
           {RECORD_TYPES.map((recordType) => {
             const info = RECORD_TYPE_INFO[recordType]
@@ -41,10 +43,5 @@ export function AddRecordPage() {
 
   if (!isRecordType(type)) return <Navigate to="/add" replace />
 
-  return (
-    <>
-      <PageHeader title={`New ${RECORD_TYPE_INFO[type].label.toLowerCase()}`} back="/add" />
-      <RecordForm key={type} initial={emptyForm(type)} />
-    </>
-  )
+  return <RecordForm key={type} initial={emptyForm(type)} />
 }

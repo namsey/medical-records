@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppLayout } from './components/layout/AppLayout'
 import { AddRecordPage } from './pages/AddRecordPage'
 import { DocumentViewerPage } from './pages/DocumentViewerPage'
@@ -8,8 +8,8 @@ import { EditRecordPage } from './pages/EditRecordPage'
 import { HomePage } from './pages/HomePage'
 import { LabsPage } from './pages/LabsPage'
 import { LoginPage } from './pages/LoginPage'
-import { MorePage } from './pages/MorePage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { ProfilePage } from './pages/ProfilePage'
 import { RecordDetailPage } from './pages/RecordDetailPage'
 import { RecordsPage } from './pages/RecordsPage'
 import { SearchPage } from './pages/SearchPage'
@@ -41,7 +41,8 @@ export function App() {
           <Route path="documents/:id" element={<DocumentViewerPage />} />
           <Route path="doctors" element={<DoctorsPage />} />
           <Route path="labs" element={<LabsPage />} />
-          <Route path="more" element={<MorePage />} />
+          <Route path="profile" element={<ProfilePage />} />
+          <Route path="more" element={<Navigate to="/profile" replace />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

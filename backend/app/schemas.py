@@ -296,6 +296,11 @@ class TagOut(BaseModel):
     record_count: int
 
 
+class YearCount(BaseModel):
+    year: int
+    record_count: int
+
+
 class TimelineItem(BaseModel):
     id: str
     record_type: RecordType

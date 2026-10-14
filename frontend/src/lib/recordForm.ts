@@ -1,4 +1,4 @@
-import { orNull, todayIso } from './format'
+import { orNull, pluralize, todayIso } from './format'
 import type { LabResult, Medicine, MedicalRecord, RecordInput, RecordType } from './types'
 
 export type FieldKey =
@@ -281,6 +281,56 @@ export function formToInput(form: RecordFormState): RecordInput {
     medicines,
     results,
   }
+}
+
+/** Where each type-specific field keeps its value in the form state. */
+const FIELD_STATE: Record<Exclude<FieldKey, 'title'>, keyof RecordFormState> = {
+  doctor: 'doctorId',
+  lab: 'labId',
+  hospital: 'hospital',
+  specialization: 'specialization',
+  reason: 'reason',
+  symptoms: 'symptoms',
+  diagnosis: 'diagnosis',
+  description: 'description',
+  treatment: 'treatment',
+  doctorNotes: 'doctorNotes',
+  summary: 'summary',
+  testName: 'testName',
+  followUpDate: 'followUpDate',
+  reportDate: 'reportDate',
+}
+
+/** Switch the form to another record type. Values stay in the form, so switching back restores them. */
+export function changeRecordType(form: RecordFormState, recordType: RecordType): RecordFormState {
+  return {
+    ...form,
+    recordType,
+    medicines: recordType === 'prescription' && form.medicines.length === 0 ? [emptyMedicine()] : form.medicines,
+    results: recordType === 'lab_report' && form.results.length === 0 ? [emptyResult()] : form.results,
+  }
+}
+
+/**
+ * Details the form holds that its current record type does not store, so saving would drop them
+ * (e.g. medicines after switching a prescription to a scan). Labels use the wording of `previousType`.
+ */
+export function droppedDetails(form: RecordFormState, previousType: RecordType): string[] {
+  const config = FORM_CONFIG[form.recordType]
+  const dropped: string[] = []
+  for (const [field, stateKey] of Object.entries(FIELD_STATE) as [Exclude<FieldKey, 'title'>, keyof RecordFormState][]) {
+    const value = form[stateKey]
+    if (config.fields.includes(field) || typeof value !== 'string' || !value.trim()) continue
+    const labelType = FORM_CONFIG[previousType].fields.includes(field)
+      ? previousType
+      : ((Object.keys(FORM_CONFIG) as RecordType[]).find((type) => FORM_CONFIG[type].fields.includes(field)) ?? previousType)
+    dropped.push(fieldLabel(labelType, field))
+  }
+  const medicines = form.medicines.filter((m) => m.name.trim()).length
+  if (!config.medicines && medicines > 0) dropped.push(pluralize(medicines, 'medicine'))
+  const results = form.results.filter((r) => r.parameter.trim()).length
+  if (!config.results && results > 0) dropped.push(pluralize(results, 'test result'))
+  return dropped
 }
 
 /** Client-side checks for the fields the server also requires. Returns field -> message. */

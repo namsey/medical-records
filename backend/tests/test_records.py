@@ -153,6 +153,19 @@ def test_update_replaces_medicines(client, make_record):
     assert [m["name"] for m in updated["medicines"]] == ["C"]
 
 
+def test_update_can_change_record_type(client, make_record):
+    record = make_record(record_type="prescription", title="Cold", reason="Common cold", medicines=[{"name": "Paracetamol"}])
+    response = client.put(
+        f"/api/records/{record['id']}",
+        json=record_payload(record_type="doctor_visit", title="Cold", reason="Common cold", medicines=[]),
+    )
+    assert response.status_code == 200, response.text
+    updated = client.get(f"/api/records/{record['id']}").json()
+    assert updated["record_type"] == "doctor_visit"
+    assert updated["reason"] == "Common cold"
+    assert updated["medicines"] == []
+
+
 def test_missing_record_returns_404(client):
     assert client.get("/api/records/does-not-exist").status_code == 404
     assert client.put("/api/records/does-not-exist", json=record_payload()).status_code == 404

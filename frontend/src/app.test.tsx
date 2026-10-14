@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { fullRecord, mockApi, renderApp, summary, USER } from './test/helpers'
@@ -40,7 +40,6 @@ describe('home and records', () => {
     expect(within(card).getByText(/Dr\. Anita Sharma · Pathcare Diagnostics/)).toBeInTheDocument()
     expect(within(card).getByText('Blood')).toBeInTheDocument()
     expect(card.querySelectorAll('svg.lucide-chevron-right')).toHaveLength(1)
-    expect(screen.getByRole('link', { name: /add record/i })).toHaveAttribute('href', '/add')
     expect(screen.getByRole('link', { name: /view all \(1\)/i })).toBeInTheDocument()
   })
 
@@ -58,13 +57,13 @@ describe('home and records', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
-  it('has the four main navigation entries', async () => {
+  it('has the five main navigation entries with Add in the centre', async () => {
     mockApi({ ...authed, 'GET /api/records': emptyPage })
     renderApp('/')
     const nav = await screen.findByRole('navigation', { name: 'Main' })
-    for (const label of ['Home', 'Records', 'Add', 'Search']) {
-      expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
-    }
+    const entries = within(nav).getAllByRole('listitem').map((item) => item.textContent)
+    expect(entries).toEqual(['Home', 'Records', 'Add', 'Search', 'Profile'])
+    expect(within(nav).getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile')
   })
 
   it('leaves the file count out of the card meta when there are no files, and pluralises it', async () => {
@@ -72,6 +71,54 @@ describe('home and records', () => {
     renderApp('/')
     expect(within(await screen.findByRole('link', { name: /No files/ })).getByText(paragraph('Lab Report · 10 Sep 2026'))).toBeInTheDocument()
     expect(within(screen.getByRole('link', { name: /Two files/ })).getByText(paragraph('Lab Report · 10 Sep 2026 · 2 files'))).toBeInTheDocument()
+  })
+
+  it('keeps Home free of the menu, search bar and duplicate add button', async () => {
+    mockApi({ ...authed, 'GET /api/records': { items: [summary()], total: 1, limit: 8, offset: 0 } })
+    renderApp('/')
+    await screen.findByRole('link', { name: /Lab Report - Vitamin B12/ })
+    expect(screen.queryByRole('link', { name: /more options/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+    const main = screen.getByRole('main')
+    expect(within(main).queryByRole('link', { name: /add record/i })).not.toBeInTheDocument()
+  })
+
+  it('filters Records with type and year chips, sorts, and groups by month', async () => {
+    const items = [summary({ id: 'a', title: 'Eye checkup', record_type: 'doctor_visit', record_date: '2026-10-13' }), summary({ id: 'b', title: 'Knee MRI', record_type: 'scan', record_date: '2025-03-11' })]
+    const calls = mockApi({
+      ...authed,
+      'GET /api/tags': [],
+      'GET /api/years': [{ year: 2026, record_count: 1 }, { year: 2025, record_count: 1 }],
+      'GET /api/records': (call) => {
+        const type = call.params.get('record_type')
+        const found = items.filter((item) => (!type || item.record_type === type) && (!call.params.get('date_from') || item.record_date >= call.params.get('date_from')!))
+        return { json: { items: call.params.get('sort') === 'oldest' ? [...found].reverse() : found, total: found.length, limit: 20, offset: 0 } }
+      },
+    })
+    renderApp('/records')
+    const chips = await screen.findByRole('group', { name: 'Quick filters' })
+    expect(within(chips).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+    expect(await within(chips).findByRole('button', { name: '2025' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'October 2026' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'March 2025' })).toBeInTheDocument()
+    expect(screen.getByText('2 records')).toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort records' }), 'oldest')
+    await waitFor(() => expect(calls.some((c) => c.path === '/api/records' && c.params.get('sort') === 'oldest')).toBe(true))
+    await waitFor(() => expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual(['March 2025', 'October 2026']))
+
+    await user.click(within(chips).getByRole('button', { name: 'Doctor Visit' }))
+    expect(await screen.findByText('1 doctor visit')).toBeInTheDocument()
+    expect(within(chips).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(within(chips).getByRole('button', { name: '2026' }))
+    expect(await screen.findByText('1 doctor visit in 2026')).toBeInTheDocument()
+    const last = calls.filter((c) => c.path === '/api/records').pop()!
+    expect([last.params.get('record_type'), last.params.get('date_from'), last.params.get('date_to')]).toEqual(['doctor_visit', '2026-01-01', '2026-12-31'])
+
+    await user.click(within(chips).getByRole('button', { name: 'All' }))
+    expect(await screen.findByText('2 records')).toBeInTheDocument()
   })
 
   it('searches as you type and shows matches', async () => {
@@ -88,10 +135,98 @@ describe('home and records', () => {
     expect(screen.getByText('1 record found')).toBeInTheDocument()
   })
 
-  it('shows a no-results message for a search with no matches', async () => {
-    mockApi({ ...authed, 'GET /api/search': emptyPage, 'GET /api/records': emptyPage, 'GET /api/tags': [] })
+  it('shows a no-results message for a search with no matches, with a way to clear it', async () => {
+    const calls = mockApi({ ...authed, 'GET /api/search': emptyPage, 'GET /api/records': { items: [summary()], total: 1, limit: 20, offset: 0 }, 'GET /api/tags': [] })
     renderApp('/search?q=zzz')
-    expect(await screen.findByText('No matching records')).toBeInTheDocument()
+    const empty = (await screen.findByRole('heading', { name: 'No results for “zzz”' })).parentElement!
+    expect(within(empty).getByText(/check the spelling/i)).toBeInTheDocument()
+    expect(within(empty).queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument()
+    await userEvent.click(within(empty).getByRole('button', { name: 'Clear search' }))
+    expect(await screen.findByRole('link', { name: /Lab Report - Vitamin B12/ })).toBeInTheDocument()
+    expect(calls.filter((c) => c.path === '/api/records').length).toBeGreaterThan(0)
+  })
+
+  it('offers to clear filters when a search has no matches with filters on', async () => {
+    mockApi({ ...authed, 'GET /api/search': emptyPage, 'GET /api/tags': [] })
+    renderApp('/search?q=zzz&type=scan')
+    expect(await screen.findByRole('heading', { name: 'No results for “zzz”' })).toBeInTheDocument()
+    expect(screen.getByText(/filters on \(Scan\)/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument()
+  })
+
+  it('explains when filters match nothing and clears them', async () => {
+    mockApi({
+      ...authed,
+      'GET /api/tags': [],
+      'GET /api/years': [{ year: 2024, record_count: 1 }],
+      'GET /api/records': (call) => ({ json: call.params.get('record_type') ? emptyPage : { items: [summary()], total: 1, limit: 20, offset: 0 } }),
+    })
+    renderApp('/records?type=scan&year=2024')
+    expect(await screen.findByRole('heading', { name: 'No records match these filters' })).toBeInTheDocument()
+    expect(screen.getByText(/Nothing found for Scan · 2024/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(await screen.findByRole('link', { name: /Lab Report - Vitamin B12/ })).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Quick filters' })).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('invites adding the first record when there are none', async () => {
+    mockApi({ ...authed, 'GET /api/records': emptyPage, 'GET /api/tags': [], 'GET /api/years': [] })
+    renderApp('/records')
+    expect(await screen.findByRole('heading', { name: 'No records yet' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Add your first record' })).toHaveAttribute('href', '/add')
+  })
+})
+
+describe('record type sheet', () => {
+  async function openSheet() {
+    mockApi({ ...authed, 'GET /api/records': emptyPage, 'GET /api/doctors': [], 'GET /api/labs': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] } })
+    renderApp('/')
+    const nav = await screen.findByRole('navigation', { name: 'Main' })
+    await userEvent.click(within(nav).getByRole('button', { name: 'Add record' }))
+    return screen.findByRole('dialog', { name: 'Add record' })
+  }
+
+  it('shows every record type and opens the chosen form', async () => {
+    const sheet = await openSheet()
+    for (const label of ['Doctor Visit', 'Prescription', 'Lab Report', 'Diagnosis', 'Medical Document', 'Scan', 'Other']) {
+      expect(within(sheet).getByRole('link', { name: label })).toBeInTheDocument()
+    }
+    await userEvent.click(within(sheet).getByRole('link', { name: 'Scan' }))
+    expect(await screen.findByRole('heading', { name: 'New scan' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('marks the + as the current page while adding a record', async () => {
+    mockApi({ ...authed, 'GET /api/records': emptyPage, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] } })
+    renderApp('/add/scan')
+    const nav = await screen.findByRole('navigation', { name: 'Main' })
+    expect(within(nav).getByRole('button', { name: 'Add record' })).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('closes on Escape', async () => {
+    await openSheet()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('closes on a backdrop tap', async () => {
+    const sheet = await openSheet()
+    await userEvent.click(sheet.previousElementSibling as HTMLElement)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('closes when swiped down, but not on a short drag', async () => {
+    const sheet = await openSheet()
+    fireEvent.touchStart(sheet, { touches: [{ clientY: 100 }] })
+    fireEvent.touchMove(sheet, { touches: [{ clientY: 130 }] })
+    fireEvent.touchEnd(sheet)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    fireEvent.touchStart(sheet, { touches: [{ clientY: 100 }] })
+    fireEvent.touchMove(sheet, { touches: [{ clientY: 260 }] })
+    fireEvent.touchEnd(sheet)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 })
 
@@ -166,6 +301,126 @@ describe('adding a record', () => {
     await user.upload(input, [new File(['x'], 'notes.txt', { type: 'text/plain' }), new File(['%PDF'], 'ok.pdf', { type: 'application/pdf' })])
     expect(await screen.findByRole('alert')).toHaveTextContent('notes.txt')
     expect(screen.getByText('ok.pdf')).toBeInTheDocument()
+  })
+
+  it('closes an untouched form without asking', async () => {
+    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] }, 'GET /api/records': emptyPage })
+    renderApp('/add/doctor_visit')
+    await userEvent.click(await screen.findByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Medical Records' })).toBeInTheDocument()
+  })
+
+  it('asks before discarding unsaved changes', async () => {
+    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] }, 'GET /api/records': emptyPage })
+    renderApp('/add/doctor_visit')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Reason for visit'), 'Chest pain')
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Reason for visit')).toHaveValue('Chest pain')
+
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Discard' }))
+    expect(await screen.findByRole('heading', { name: 'Medical Records' })).toBeInTheDocument()
+  })
+
+  it('asks before a bottom-nav tab leaves a form with unsaved changes', async () => {
+    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] }, 'GET /api/records': emptyPage, 'GET /api/years': [] })
+    renderApp('/add/doctor_visit')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Reason for visit'), 'Chest pain')
+    const nav = screen.getByRole('navigation', { name: 'Main' })
+
+    await user.click(within(nav).getByRole('link', { name: 'Records' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Discard changes?' })).getByRole('button', { name: 'Keep editing' }))
+    expect(screen.getByLabelText('Reason for visit')).toHaveValue('Chest pain')
+
+    await user.click(within(nav).getByRole('link', { name: 'Records' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Discard' }))
+    expect(await screen.findByRole('heading', { name: 'Records' })).toBeInTheDocument()
+  })
+
+  it('lets an untouched form be left by any route without asking', async () => {
+    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] }, 'GET /api/records': emptyPage, 'GET /api/years': [] })
+    renderApp('/add/doctor_visit')
+    await screen.findByLabelText('Reason for visit')
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', { name: 'Records' }))
+    expect(await screen.findByRole('heading', { name: 'Records' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('has a close control on the type picker', async () => {
+    mockApi({ ...authed, 'GET /api/records': emptyPage })
+    renderApp('/add')
+    await userEvent.click(await screen.findByRole('button', { name: 'Close' }))
+    expect(await screen.findByRole('heading', { name: 'Medical Records' })).toBeInTheDocument()
+  })
+})
+
+describe('record type', () => {
+  const formRoutes = { ...authed, 'GET /api/doctors': [], 'GET /api/labs': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] } }
+
+  it('suggests a type from the title when adding, without forcing it', async () => {
+    mockApi(formRoutes)
+    renderApp('/add/doctor_visit')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Title'), 'Knee MRI')
+    expect(await screen.findByText('This looks like a scan.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'New doctor visit' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Switch to Scan' }))
+    expect(screen.getByRole('heading', { name: 'New scan' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Record type')).toHaveValue('scan')
+    expect(screen.queryByText(/looks like/)).not.toBeInTheDocument()
+  })
+
+  it('lets a suggestion be dismissed', async () => {
+    mockApi(formRoutes)
+    renderApp('/add/doctor_visit')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Title'), 'CBC')
+    await user.click(await screen.findByRole('button', { name: 'Dismiss suggestion' }))
+    expect(screen.queryByText(/looks like/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Record type')).toHaveValue('doctor_visit')
+  })
+
+  it('changes the type of a saved record, confirming before details are removed', async () => {
+    const rx = fullRecord({
+      record_type: 'prescription', title: 'Cold prescription', reason: 'Common cold', test_name: null, summary: null, report_date: null, results: [], documents: [],
+      medicines: [{ id: 'm1', name: 'Paracetamol', dosage: '500 mg', frequency: null, duration: null, start_date: null, end_date: null, instructions: null }],
+    })
+    const calls = mockApi({ ...formRoutes, 'GET /api/records/r1': rx, 'PUT /api/records/r1': (call) => ({ json: { ...rx, ...(call.body as object), medicines: [] } }) })
+    renderApp('/records/r1/edit')
+    const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText('Record type'), 'doctor_visit')
+    expect(screen.getByRole('status')).toHaveTextContent('A doctor visit does not keep: 1 medicine')
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Remove details?' })
+    expect(dialog).toHaveTextContent('1 medicine')
+    await user.click(within(dialog).getByRole('button', { name: 'Go back' }))
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save and remove' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    expect(calls.find((c) => c.method === 'PUT')!.body).toMatchObject({ record_type: 'doctor_visit', reason: 'Common cold', medicines: [] })
+  })
+
+  it('saves a type change without asking when nothing would be lost', async () => {
+    const scan = fullRecord({ record_type: 'scan', title: 'Knee MRI', test_name: null, summary: null, report_date: null, results: [], documents: [], description: 'Mild tear' })
+    const calls = mockApi({ ...formRoutes, 'GET /api/records/r1': scan, 'PUT /api/records/r1': (call) => ({ json: { ...scan, ...(call.body as object) } }) })
+    renderApp('/records/r1/edit')
+    const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText('Record type'), 'medical_document')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(calls.find((c) => c.method === 'PUT')!.body).toMatchObject({ record_type: 'medical_document', description: 'Mild tear' })
   })
 })
 
@@ -244,6 +499,28 @@ describe('timeline', () => {
   })
 })
 
+describe('timeline empty states', () => {
+  it('explains when the type filter matches nothing and clears it', async () => {
+    mockApi({
+      ...authed,
+      'GET /api/tags': [],
+      'GET /api/timeline': (call) => ({ json: call.params.get('record_type') ? [] : [{ id: 'a', record_type: 'lab_report', title: 'Blood Test', record_date: '2026-09-10', doctor_name: null, lab_name: null, document_count: 0 }] }),
+    })
+    renderApp('/timeline?type=scan')
+    expect(await screen.findByRole('heading', { name: 'No records match these filters' })).toBeInTheDocument()
+    expect(screen.getByText(/Nothing found for Scan/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(await screen.findByRole('link', { name: /Blood Test/ })).toBeInTheDocument()
+  })
+
+  it('invites adding the first record when the timeline is empty', async () => {
+    mockApi({ ...authed, 'GET /api/tags': [], 'GET /api/timeline': [] })
+    renderApp('/timeline')
+    expect(await screen.findByRole('heading', { name: 'Nothing on the timeline' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Add your first record' })).toHaveAttribute('href', '/add')
+  })
+})
+
 describe('doctors', () => {
   it('lists doctors and adds a new one', async () => {
     const doctors = [{ id: 'd1', name: 'Dr. Anita Sharma', specialization: 'Endocrinology', hospital: 'Sunrise Clinic', phone: '12345', email: null, address: null, notes: null, record_count: 2 }]
@@ -264,11 +541,14 @@ describe('doctors', () => {
   })
 })
 
-describe('more', () => {
+describe('profile', () => {
   it('offers backup, export and sign out', async () => {
     mockApi(authed)
-    renderApp('/more')
-    expect(await screen.findByRole('link', { name: /full backup/i })).toHaveAttribute('href', '/api/backup')
+    renderApp('/profile')
+    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /timeline/i })).toHaveAttribute('href', '/timeline')
+    expect(screen.getByRole('link', { name: /doctors/i })).toHaveAttribute('href', '/doctors')
+    expect(screen.getByRole('link', { name: /full backup/i })).toHaveAttribute('href', '/api/backup')
     expect(screen.getByRole('link', { name: /export records/i })).toHaveAttribute('href', '/api/export/json')
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
     expect(screen.getByText(/naman@example\.com/)).toBeInTheDocument()
@@ -276,9 +556,15 @@ describe('more', () => {
 
   it('signs out', async () => {
     const calls = mockApi({ ...authed, 'POST /api/auth/logout': { ok: true } })
-    renderApp('/more')
+    renderApp('/profile')
     await userEvent.click(await screen.findByRole('button', { name: /sign out/i }))
     expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument()
     expect(calls.some((c) => c.method === 'POST' && c.path === '/api/auth/logout')).toBe(true)
+  })
+
+  it('redirects the old /more address to Profile', async () => {
+    mockApi(authed)
+    renderApp('/more')
+    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
   })
 })
