@@ -30,6 +30,8 @@
     --bottom-nav-height: 4.25rem;
   }
   html {
+    /* Desktop scrollbars would otherwise eat into the right gutter only, so reserve the same space on both sides. */
+    scrollbar-gutter: stable both-edges;
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
   }
