@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { fullRecord, mockApi, renderApp, summary, USER } from './test/helpers'
 
+/** Matches the paragraph whose full text (across inline elements) is exactly `text`. */
+const paragraph = (text: string) => (_: string, element: Element | null) => element?.tagName === 'P' && element.textContent === text
+
 const emptyPage = { items: [], total: 0, limit: 20, offset: 0 }
 const authed = { 'GET /api/auth/me': USER }
 
@@ -33,10 +36,10 @@ describe('home and records', () => {
     renderApp('/')
     const card = await screen.findByRole('link', { name: /Lab Report - Vitamin B12/ })
     expect(card).toHaveAttribute('href', '/records/r1')
-    expect(within(card).getByText(/10 Sep 2026/)).toBeInTheDocument()
+    expect(within(card).getByText(paragraph('Lab Report · 10 Sep 2026 · 1 file'))).toBeInTheDocument()
     expect(within(card).getByText(/Dr\. Anita Sharma · Pathcare Diagnostics/)).toBeInTheDocument()
     expect(within(card).getByText('Blood')).toBeInTheDocument()
-    expect(within(card).getByLabelText('1 attachments')).toBeInTheDocument()
+    expect(card.querySelectorAll('svg.lucide-chevron-right')).toHaveLength(1)
     expect(screen.getByRole('link', { name: /view all \(1\)/i })).toBeInTheDocument()
   })
 
@@ -61,6 +64,13 @@ describe('home and records', () => {
     const entries = within(nav).getAllByRole('listitem').map((item) => item.textContent)
     expect(entries).toEqual(['Home', 'Records', 'Add', 'Search', 'Profile'])
     expect(within(nav).getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile')
+  })
+
+  it('leaves the file count out of the card meta when there are no files, and pluralises it', async () => {
+    mockApi({ ...authed, 'GET /api/records': { items: [summary({ id: 'a', title: 'No files', document_count: 0 }), summary({ id: 'b', title: 'Two files', document_count: 2 })], total: 2, limit: 8, offset: 0 } })
+    renderApp('/')
+    expect(within(await screen.findByRole('link', { name: /No files/ })).getByText(paragraph('Lab Report · 10 Sep 2026'))).toBeInTheDocument()
+    expect(within(screen.getByRole('link', { name: /Two files/ })).getByText(paragraph('Lab Report · 10 Sep 2026 · 2 files'))).toBeInTheDocument()
   })
 
   it('keeps Home free of the menu, search bar and duplicate add button', async () => {
