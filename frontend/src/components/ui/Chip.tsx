@@ -14,7 +14,7 @@ export function ToggleChip({ selected, onClick, children }: ToggleChipProps) {
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={`inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition ${
+      className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 text-sm font-medium transition ${
         selected ? 'border-brand-700 bg-brand-700 text-white' : 'border-line bg-white text-ink hover:bg-wash'
       }`}
     >
@@ -28,7 +28,7 @@ export function TagPill({ children, onRemove }: { children: ReactNode; onRemove?
     <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-800">
       {children}
       {onRemove && (
-        <button type="button" onClick={onRemove} aria-label={`Remove tag ${String(children)}`} className="-mr-1 grid size-6 place-items-center rounded-full hover:bg-brand-100">
+        <button type="button" onClick={onRemove} aria-label={`Remove tag ${String(children)}`} className="-my-2.5 -ml-1 -mr-2.5 grid size-11 shrink-0 place-items-center rounded-full hover:bg-brand-100">
           <X className="size-3.5" />
         </button>
       )}

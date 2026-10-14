@@ -7,7 +7,8 @@
   --color-paper: #faf8f3;
   --color-card: #ffffff;
   --color-ink: #1d2733;
-  --color-muted: #667085;
+  /* At least 5:1 on paper, card and wash backgrounds. */
+  --color-muted: #5d6679;
   --color-line: #e6e2d8;
   --color-wash: #f3f0e8;
 

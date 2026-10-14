@@ -71,7 +71,7 @@ export function TagInput({ tags, onChange }: TagInputProps) {
                 key={tag.name}
                 type="button"
                 onClick={() => add(tag.name)}
-                className="min-h-9 rounded-full border border-dashed border-line px-3 text-sm text-muted hover:bg-wash"
+                className="min-h-11 rounded-full border border-dashed border-line px-3 text-sm text-muted hover:bg-wash"
               >
                 + {tag.name}
               </button>

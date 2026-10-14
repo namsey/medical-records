@@ -52,7 +52,7 @@ export function LabsPage() {
             </button>
             {lab.phone && (
               <div className="border-t border-line px-4 py-2">
-                <a href={`tel:${lab.phone}`} className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-brand-700">
+                <a href={`tel:${lab.phone}`} className="inline-flex min-h-11 min-w-11 items-center gap-1.5 text-sm font-semibold text-brand-700">
                   <Phone className="size-4" aria-hidden />
                   {lab.phone}
                 </a>
