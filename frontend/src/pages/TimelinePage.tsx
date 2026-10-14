@@ -1,4 +1,4 @@
-import { CalendarClock, Menu, Paperclip } from 'lucide-react'
+import { CalendarClock, Paperclip } from 'lucide-react'
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -50,14 +50,7 @@ export function TimelinePage() {
 
   return (
     <>
-      <PageHeader
-        title="Records"
-        action={
-          <Link to="/more" aria-label="More options" className="grid size-11 place-items-center rounded-full text-ink hover:bg-wash">
-            <Menu className="size-6" />
-          </Link>
-        }
-      />
+      <PageHeader title="Records" />
       <ViewSwitch active="timeline" />
       <div className="mb-5">
         <FilterPanel filters={filters} onChange={setFilters} typesOnly />

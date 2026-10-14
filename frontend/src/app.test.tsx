@@ -37,7 +37,6 @@ describe('home and records', () => {
     expect(within(card).getByText(/Dr\. Anita Sharma · Pathcare Diagnostics/)).toBeInTheDocument()
     expect(within(card).getByText('Blood')).toBeInTheDocument()
     expect(within(card).getByLabelText('1 attachments')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /add record/i })).toHaveAttribute('href', '/add')
     expect(screen.getByRole('link', { name: /view all \(1\)/i })).toBeInTheDocument()
   })
 
@@ -55,13 +54,23 @@ describe('home and records', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
-  it('has the four main navigation entries', async () => {
+  it('has the five main navigation entries with Add in the centre', async () => {
     mockApi({ ...authed, 'GET /api/records': emptyPage })
     renderApp('/')
     const nav = await screen.findByRole('navigation', { name: 'Main' })
-    for (const label of ['Home', 'Records', 'Add', 'Search']) {
-      expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
-    }
+    const entries = within(nav).getAllByRole('listitem').map((item) => item.textContent)
+    expect(entries).toEqual(['Home', 'Records', 'Add', 'Search', 'Profile'])
+    expect(within(nav).getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile')
+  })
+
+  it('keeps Home free of the menu, search bar and duplicate add button', async () => {
+    mockApi({ ...authed, 'GET /api/records': { items: [summary()], total: 1, limit: 8, offset: 0 } })
+    renderApp('/')
+    await screen.findByRole('link', { name: /Lab Report - Vitamin B12/ })
+    expect(screen.queryByRole('link', { name: /more options/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+    const main = screen.getByRole('main')
+    expect(within(main).queryByRole('link', { name: /add record/i })).not.toBeInTheDocument()
   })
 
   it('searches as you type and shows matches', async () => {
@@ -282,11 +291,14 @@ describe('doctors', () => {
   })
 })
 
-describe('more', () => {
+describe('profile', () => {
   it('offers backup, export and sign out', async () => {
     mockApi(authed)
-    renderApp('/more')
-    expect(await screen.findByRole('link', { name: /full backup/i })).toHaveAttribute('href', '/api/backup')
+    renderApp('/profile')
+    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /timeline/i })).toHaveAttribute('href', '/timeline')
+    expect(screen.getByRole('link', { name: /doctors/i })).toHaveAttribute('href', '/doctors')
+    expect(screen.getByRole('link', { name: /full backup/i })).toHaveAttribute('href', '/api/backup')
     expect(screen.getByRole('link', { name: /export records/i })).toHaveAttribute('href', '/api/export/json')
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
     expect(screen.getByText(/naman@example\.com/)).toBeInTheDocument()
@@ -294,9 +306,15 @@ describe('more', () => {
 
   it('signs out', async () => {
     const calls = mockApi({ ...authed, 'POST /api/auth/logout': { ok: true } })
-    renderApp('/more')
+    renderApp('/profile')
     await userEvent.click(await screen.findByRole('button', { name: /sign out/i }))
     expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument()
     expect(calls.some((c) => c.method === 'POST' && c.path === '/api/auth/logout')).toBe(true)
+  })
+
+  it('redirects the old /more address to Profile', async () => {
+    mockApi(authed)
+    renderApp('/more')
+    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
   })
 })

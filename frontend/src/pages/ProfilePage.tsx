@@ -33,14 +33,14 @@ function DownloadLink({ href, icon: Icon, title, hint }: { href: string; icon: L
   )
 }
 
-export function MorePage() {
+export function ProfilePage() {
   const { data: user } = useMe()
   const logout = useLogout()
   const navigate = useNavigate()
 
   return (
     <div className="space-y-6">
-      <PageHeader title="More" back />
+      <PageHeader title="Profile" subtitle={user?.email} />
 
       <section className="space-y-3" aria-label="Browse">
         <MenuLink to="/timeline" icon={CalendarClock} title="Timeline" hint="Everything in date order" />
@@ -60,7 +60,6 @@ export function MorePage() {
       </section>
 
       <section className="space-y-3" aria-label="Account">
-        {user && <p className="text-sm text-muted">Signed in as {user.email}</p>}
         <Button
           variant="secondary"
           className="w-full"
