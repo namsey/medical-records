@@ -32,6 +32,9 @@ Work top to bottom. Each item lists what "done" means.
 - [x] #13 Helpful empty states for: no records, no search results, and filters with no matches (with a clear action).
   - Notes: Records, Search and Timeline tell apart: no records at all ("No records yet"/"Nothing on the timeline" + Add your first record), a search with no results ("No results for …", spelling hint or the active filters named, Clear search, plus Clear filters when filters are on), and filters with no matches ("No records match these filters" naming them, Clear filters that keeps search and sort). Home has its own no-records state. Each case and its action is covered by a test.
 
+## Engineering
+- [ ] #34 Tests and CI: Playwright end-to-end tests for the core flows at 390px width (add a record of each type with an attachment, view, edit, delete, search, filter, List/Timeline toggle), and a GitHub Actions workflow that runs install, lint, build and the tests on every PR to main.
+
 ## Parked (not planned)
 Do not implement or suggest these unless I explicitly ask.
 
