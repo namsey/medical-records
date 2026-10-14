@@ -6,7 +6,8 @@ Work top to bottom. Each item lists what "done" means.
 ## Level 1: Visual fixes
 - [x] #1 Bottom padding: no content hidden behind the bottom nav (safe-area aware, shared variable for nav height).
   - Notes: `--bottom-nav-height` in index.css; shared `<main>` uses `.pb-bottom-nav` (nav height + safe-area inset + 16px); nav height includes the safe-area inset. Toast offset (`bottom-24`) not yet tied to it.
-- [ ] #2 Centred page container: equal gutters on every screen; one shared container.
+- [x] #2 Centred page container: equal gutters on every screen; one shared container.
+  - Notes: all screens already shared one container (`<main>` in AppLayout). The uneven gutters came from the desktop scrollbar taking space on the right only; fixed with `scrollbar-gutter: stable both-edges` on html. No effect on phones (overlay scrollbars).
 - [ ] #3 Consistent type scale: shared page title / subtitle / section heading styles.
 - [ ] #4 Bottom nav labels share one baseline; the raised + button doesn't push its label down.
 - [ ] #5 Record card: meta line "Type · Date · N files", one vertically centred chevron, title truncates.
