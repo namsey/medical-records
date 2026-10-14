@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useBlocker, useNavigate } from 'react-router-dom'
 import { useGoBack } from '@/hooks/useGoBack'
 import { uploadDocument, useCreateRecord, useDoctors, useInvalidateRecordData, useUpdateRecord } from '@/hooks/queries'
 import { errorMessage } from '@/lib/api'
@@ -61,7 +61,6 @@ export function RecordForm({ initial, existing }: RecordFormProps) {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
-  const [confirmingLeave, setConfirmingLeave] = useState(false)
   const [confirmingDrop, setConfirmingDrop] = useState(false)
   const [dismissedSuggestion, setDismissedSuggestion] = useState<RecordType | null>(null)
   const topRef = useRef<HTMLDivElement>(null)
@@ -74,6 +73,14 @@ export function RecordForm({ initial, existing }: RecordFormProps) {
   useDoctors() // warm the directory so the pickers render instantly
 
   const dirty = files.length > 0 || JSON.stringify(form) !== JSON.stringify(initial)
+  // Set just before the form navigates away itself after saving, so that navigation is never blocked.
+  const saved = useRef(false)
+
+  // Any way of leaving with unsaved changes (Cancel, Close/Back, a bottom-nav tab, the browser's Back button)
+  // is held here until the user confirms in the "Discard changes?" dialog.
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) => dirty && !saved.current && currentLocation.pathname !== nextLocation.pathname,
+  )
 
   // Reloading or closing the tab with unsaved changes asks the browser to confirm.
   useEffect(() => {
@@ -83,10 +90,6 @@ export function RecordForm({ initial, existing }: RecordFormProps) {
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [dirty, saving])
 
-  function leave() {
-    if (dirty) setConfirmingLeave(true)
-    else goBack()
-  }
 
   const config = FORM_CONFIG[form.recordType]
   const titleRequired = TITLE_REQUIRED.includes(form.recordType)
@@ -144,6 +147,7 @@ export function RecordForm({ initial, existing }: RecordFormProps) {
 
       if (failures.length > 0) toast.error(`Record saved, but some files were not uploaded:\n${failures.join('\n')}`)
       else toast.success(existing ? 'Record updated' : 'Record saved')
+      saved.current = true
       navigate(`/records/${record.id}`, { replace: true })
     } catch (error) {
       setSubmitError(errorMessage(error))
@@ -180,7 +184,7 @@ export function RecordForm({ initial, existing }: RecordFormProps) {
 
   return (
     <>
-      <PageHeader title={existing ? 'Edit record' : `New ${typeLabel.toLowerCase()}`} onBack={saving ? undefined : leave} backIcon={existing ? 'arrow' : 'close'} />
+      <PageHeader title={existing ? 'Edit record' : `New ${typeLabel.toLowerCase()}`} onBack={saving ? undefined : goBack} backIcon={existing ? 'arrow' : 'close'} />
       <form onSubmit={submit} noValidate className="space-y-4">
         <div ref={topRef} className="scroll-mt-20" />
         {submitError && <ErrorMessage message={submitError} />}
@@ -245,7 +249,7 @@ export function RecordForm({ initial, existing }: RecordFormProps) {
         </FormSection>
 
         <div className="grid grid-cols-2 gap-3 pt-2">
-          <Button variant="secondary" disabled={saving} onClick={leave}>
+          <Button variant="secondary" disabled={saving} onClick={goBack}>
             Cancel
           </Button>
           <Button type="submit" loading={saving}>
@@ -266,16 +270,13 @@ export function RecordForm({ initial, existing }: RecordFormProps) {
         onCancel={() => setConfirmingDrop(false)}
       />
       <ConfirmDialog
-        open={confirmingLeave}
+        open={blocker.state === 'blocked'}
         title="Discard changes?"
         message={existing ? 'Your changes to this record will not be saved.' : 'This record has not been saved. What you entered will be lost.'}
         confirmLabel="Discard"
         cancelLabel="Keep editing"
-        onConfirm={() => {
-          setConfirmingLeave(false)
-          goBack()
-        }}
-        onCancel={() => setConfirmingLeave(false)}
+        onConfirm={() => blocker.proceed?.()}
+        onCancel={() => blocker.reset?.()}
       />
     </>
   )
