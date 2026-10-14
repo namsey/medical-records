@@ -79,6 +79,11 @@
   [type="date"] {
     min-height: 3rem;
   }
+  /* Search boxes have their own labelled clear button; hide the browser's built-in one. */
+  [type="search"]::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
 @layer components {
