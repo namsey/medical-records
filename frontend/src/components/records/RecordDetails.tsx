@@ -115,7 +115,7 @@ export function TagLinks({ tags }: { tags: string[] }) {
   return (
     <div className="flex flex-wrap gap-2">
       {tags.map((tag) => (
-        <Link key={tag} to={`/records?tag=${encodeURIComponent(tag)}`}>
+        <Link key={tag} to={`/records?tag=${encodeURIComponent(tag)}`} className="inline-flex min-h-11 items-center">
           <TagPill>{tag}</TagPill>
         </Link>
       ))}

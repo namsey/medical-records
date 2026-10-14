@@ -16,7 +16,8 @@ Work top to bottom. Each item lists what "done" means.
   - Notes: Card meta reads "Type · Date · N files" (file count only when there are files, pluralised); the paperclip column is gone, leaving one vertically centred chevron; the title truncates. Each meta part stays whole, so at 360px the line wraps between parts rather than inside a date. Timeline items keep their own layout.
 - [x] #6 Distinct category colours from one central type→colour map; no two types similar; none look like the primary action colour.
   - Notes: Type colours are --color-type-<type> / -soft tokens in index.css (the one central map), wired through RECORD_TYPE_INFO. Blue, violet, amber, red, brown, magenta and neutral grey: hues 70°+ from the teal brand, nearest pair ΔE(OKLab) ≈ 0.10, every strong colour ≥ 5:1 on its tint and on the page. Replaces the two greys (Medical Document/Other) and two blues (Doctor Visit/Scan).
-- [ ] #7 Accessibility basics: aria-labels on icon buttons, nav landmark + aria-current, contrast ≥ 4.5:1 for text, 44px targets, focus-visible.
+- [x] #7 Accessibility basics: aria-labels on icon buttons, nav landmark + aria-current, contrast ≥ 4.5:1 for text, 44px targets, focus-visible.
+  - Notes: Audited 16 screens/states with axe-core (WCAG 2.1 AA + best practice) plus a 44px target and unlabelled-control scan: 23 issues → 0. Darkened the muted text token to #5d6679 (≥5:1 on paper, card and wash); chips, small buttons, tag suggestions, tag links and phone/email links are ≥44px; tag remove buttons have a 44px hit area. Icon buttons were already labelled, the nav landmark has aria-current, and focus-visible rings were already in place.
 
 ## Level 2: UX and structure
 - [ ] #8 Add record screen has a close/back control; cancelling with unsaved changes asks for confirmation.
