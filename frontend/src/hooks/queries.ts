@@ -13,21 +13,28 @@ import type {
   RecordPage,
   RecordType,
   TagCount,
+  YearCount,
   TimelineItem,
   User,
 } from '@/lib/types'
 
 export const PAGE_SIZE = 20
 
-export const EMPTY_FILTERS: RecordFilters = { q: '', types: [], tags: [], dateFrom: '', dateTo: '' }
+export const EMPTY_FILTERS: RecordFilters = { q: '', types: [], tags: [], dateFrom: '', dateTo: '', year: '', sort: 'newest' }
 
 export function filtersToParams(filters: RecordFilters): URLSearchParams {
   const params = new URLSearchParams()
   if (filters.q.trim()) params.set('q', filters.q.trim())
   filters.types.forEach((type) => params.append('record_type', type))
   filters.tags.forEach((tag) => params.append('tag', tag))
-  if (filters.dateFrom) params.set('date_from', filters.dateFrom)
-  if (filters.dateTo) params.set('date_to', filters.dateTo)
+  // A year narrows the date range; when both are set, the stricter bound wins.
+  const yearFrom = filters.year ? `${filters.year}-01-01` : ''
+  const yearTo = filters.year ? `${filters.year}-12-31` : ''
+  const dateFrom = [filters.dateFrom, yearFrom].filter(Boolean).sort().pop()
+  const dateTo = [filters.dateTo, yearTo].filter(Boolean).sort().shift()
+  if (dateFrom) params.set('date_from', dateFrom)
+  if (dateTo) params.set('date_to', dateTo)
+  if (filters.sort === 'oldest') params.set('sort', 'oldest')
   return params
 }
 
@@ -96,7 +103,7 @@ export function useInvalidateRecordData() {
   const queryClient = useQueryClient()
   return () =>
     Promise.all(
-      [['records'], ['record'], ['timeline'], ['tags'], ['doctors'], ['labs']].map((queryKey) =>
+      [['records'], ['record'], ['timeline'], ['tags'], ['years'], ['doctors'], ['labs']].map((queryKey) =>
         queryClient.invalidateQueries({ queryKey }),
       ),
     )
@@ -223,6 +230,10 @@ export function useDeleteLab() {
 
 export function useTags() {
   return useQuery({ queryKey: ['tags'], queryFn: ({ signal }) => request<TagCount[]>('/api/tags', { signal }) })
+}
+
+export function useYears() {
+  return useQuery({ queryKey: ['years'], queryFn: ({ signal }) => request<YearCount[]>('/api/years', { signal }) })
 }
 
 export function useTimeline(types: RecordType[]) {

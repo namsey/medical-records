@@ -168,10 +168,20 @@ export interface TimelineItem {
   document_count: number
 }
 
+export type RecordSort = 'newest' | 'oldest'
+
 export interface RecordFilters {
   q: string
   types: RecordType[]
   tags: string[]
   dateFrom: string
   dateTo: string
+  /** A single calendar year (`YYYY`) or '' for any year. */
+  year: string
+  sort: RecordSort
+}
+
+export interface YearCount {
+  year: number
+  record_count: number
 }

@@ -83,6 +83,44 @@ describe('home and records', () => {
     expect(within(screen.getByRole('link', { name: /Two files/ })).getByText(paragraph('Lab Report · 10 Sep 2026 · 2 files'))).toBeInTheDocument()
   })
 
+  it('filters Records with type and year chips, sorts, and groups by month', async () => {
+    const items = [summary({ id: 'a', title: 'Eye checkup', record_type: 'doctor_visit', record_date: '2026-10-13' }), summary({ id: 'b', title: 'Knee MRI', record_type: 'scan', record_date: '2025-03-11' })]
+    const calls = mockApi({
+      ...authed,
+      'GET /api/tags': [],
+      'GET /api/years': [{ year: 2026, record_count: 1 }, { year: 2025, record_count: 1 }],
+      'GET /api/records': (call) => {
+        const type = call.params.get('record_type')
+        const found = items.filter((item) => (!type || item.record_type === type) && (!call.params.get('date_from') || item.record_date >= call.params.get('date_from')!))
+        return { json: { items: call.params.get('sort') === 'oldest' ? [...found].reverse() : found, total: found.length, limit: 20, offset: 0 } }
+      },
+    })
+    renderApp('/records')
+    const chips = await screen.findByRole('group', { name: 'Quick filters' })
+    expect(within(chips).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+    expect(await within(chips).findByRole('button', { name: '2025' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'October 2026' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'March 2025' })).toBeInTheDocument()
+    expect(screen.getByText('2 records')).toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort records' }), 'oldest')
+    await waitFor(() => expect(calls.some((c) => c.path === '/api/records' && c.params.get('sort') === 'oldest')).toBe(true))
+    await waitFor(() => expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual(['March 2025', 'October 2026']))
+
+    await user.click(within(chips).getByRole('button', { name: 'Doctor Visit' }))
+    expect(await screen.findByText('1 doctor visit')).toBeInTheDocument()
+    expect(within(chips).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(within(chips).getByRole('button', { name: '2026' }))
+    expect(await screen.findByText('1 doctor visit in 2026')).toBeInTheDocument()
+    const last = calls.filter((c) => c.path === '/api/records').pop()!
+    expect([last.params.get('record_type'), last.params.get('date_from'), last.params.get('date_to')]).toEqual(['doctor_visit', '2026-01-01', '2026-12-31'])
+
+    await user.click(within(chips).getByRole('button', { name: 'All' }))
+    expect(await screen.findByText('2 records')).toBeInTheDocument()
+  })
+
   it('searches as you type and shows matches', async () => {
     const calls = mockApi({
       ...authed,

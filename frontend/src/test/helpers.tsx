@@ -12,6 +12,7 @@ import type { MedicalRecord, RecordSummary } from '@/lib/types'
 export interface RecordedCall {
   method: string
   path: string
+  params: URLSearchParams
   body: unknown
   headers: Record<string, string>
 }
@@ -33,7 +34,7 @@ export function mockApi(routes: Record<string, Route>): RecordedCall[] {
       const method = (init?.method ?? 'GET').toUpperCase()
       let body: unknown = init?.body
       if (typeof body === 'string') body = JSON.parse(body)
-      const call: RecordedCall = { method, path: url.pathname, body, headers: (init?.headers ?? {}) as Record<string, string> }
+      const call: RecordedCall = { method, path: url.pathname, params: url.searchParams, body, headers: (init?.headers ?? {}) as Record<string, string> }
       calls.push(call)
       const route = routes[`${method} ${url.pathname}`]
       if (route === undefined) return new Response(JSON.stringify({ detail: `No mock for ${method} ${url.pathname}` }), { status: 404 })
