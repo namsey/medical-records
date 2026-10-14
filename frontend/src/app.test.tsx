@@ -66,6 +66,13 @@ describe('home and records', () => {
     expect(within(nav).getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile')
   })
 
+  it('leaves the file count out of the card meta when there are no files, and pluralises it', async () => {
+    mockApi({ ...authed, 'GET /api/records': { items: [summary({ id: 'a', title: 'No files', document_count: 0 }), summary({ id: 'b', title: 'Two files', document_count: 2 })], total: 2, limit: 8, offset: 0 } })
+    renderApp('/')
+    expect(within(await screen.findByRole('link', { name: /No files/ })).getByText(paragraph('Lab Report · 10 Sep 2026'))).toBeInTheDocument()
+    expect(within(screen.getByRole('link', { name: /Two files/ })).getByText(paragraph('Lab Report · 10 Sep 2026 · 2 files'))).toBeInTheDocument()
+  })
+
   it('keeps Home free of the menu, search bar and duplicate add button', async () => {
     mockApi({ ...authed, 'GET /api/records': { items: [summary()], total: 1, limit: 8, offset: 0 } })
     renderApp('/')
@@ -74,13 +81,6 @@ describe('home and records', () => {
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
     const main = screen.getByRole('main')
     expect(within(main).queryByRole('link', { name: /add record/i })).not.toBeInTheDocument()
-  })
-
-  it('leaves the file count out of the card meta when there are no files, and pluralises it', async () => {
-    mockApi({ ...authed, 'GET /api/records': { items: [summary({ id: 'a', title: 'No files', document_count: 0 }), summary({ id: 'b', title: 'Two files', document_count: 2 })], total: 2, limit: 8, offset: 0 } })
-    renderApp('/')
-    expect(within(await screen.findByRole('link', { name: /No files/ })).getByText(paragraph('Lab Report · 10 Sep 2026'))).toBeInTheDocument()
-    expect(within(screen.getByRole('link', { name: /Two files/ })).getByText(paragraph('Lab Report · 10 Sep 2026 · 2 files'))).toBeInTheDocument()
   })
 
   it('filters Records with type and year chips, sorts, and groups by month', async () => {

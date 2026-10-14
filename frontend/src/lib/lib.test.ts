@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError, request } from './api'
 import { formatDate, formatDayMonth, formatFileSize, orNull, pluralize, todayIso } from './format'
-import { RECORD_TYPES, RECORD_TYPE_INFO } from './recordTypes'
 import { EMPTY_FILTERS, filtersToParams } from '@/hooks/queries'
 import { describeCount, describeFilters, groupByMonth } from './recordList'
+import { RECORD_TYPES, RECORD_TYPE_INFO } from './recordTypes'
 import { suggestRecordType } from './typeSuggestion'
 import { FORM_CONFIG, changeRecordType, droppedDetails, emptyForm, emptyMedicine, formFromRecord, formToInput, validateForm } from './recordForm'
 import type { MedicalRecord, RecordSummary } from './types'
@@ -147,17 +147,6 @@ describe('api client', () => {
   })
 })
 
-describe('record type colours', () => {
-  it('gives every type its own colour tokens from the central map', () => {
-    const tones = RECORD_TYPES.map((type) => RECORD_TYPE_INFO[type].tone)
-    expect(new Set(tones).size).toBe(RECORD_TYPES.length)
-    for (const type of RECORD_TYPES) {
-      const token = type.replace('_', '-')
-      expect(RECORD_TYPE_INFO[type].tone).toBe(`bg-type-${token}-soft text-type-${token}`)
-    }
-  })
-})
-
 describe('record list helpers', () => {
   const rec = (id: string, record_date: string): RecordSummary => ({ id, record_type: 'scan', title: id, record_date, doctor_name: null, lab_name: null, hospital: null, tags: [], document_count: 0 })
 
@@ -229,5 +218,16 @@ describe('record type changes', () => {
   it('adds an empty medicine or result row when switching to a type that needs one', () => {
     expect(changeRecordType(emptyForm('scan'), 'prescription').medicines).toHaveLength(1)
     expect(changeRecordType(emptyForm('scan'), 'lab_report').results).toHaveLength(1)
+  })
+})
+
+describe('record type colours', () => {
+  it('gives every type its own colour tokens from the central map', () => {
+    const tones = RECORD_TYPES.map((type) => RECORD_TYPE_INFO[type].tone)
+    expect(new Set(tones).size).toBe(RECORD_TYPES.length)
+    for (const type of RECORD_TYPES) {
+      const token = type.replace('_', '-')
+      expect(RECORD_TYPE_INFO[type].tone).toBe(`bg-type-${token}-soft text-type-${token}`)
+    }
   })
 })
