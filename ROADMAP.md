@@ -5,7 +5,7 @@ Work top to bottom. Each item lists what "done" means.
 
 ## Level 1: Visual fixes
 - [x] #1 Bottom padding: no content hidden behind the bottom nav (safe-area aware, shared variable for nav height).
-  - Notes: `--bottom-nav-height` in index.css; shared `<main>` uses `.pb-bottom-nav` (nav height + safe-area inset + 16px); nav height includes the safe-area inset. Toast offset (`bottom-24`) not yet tied to it.
+  - Notes: `--bottom-nav-height` in index.css; shared `<main>` uses `.pb-bottom-nav` (nav height + safe-area inset + 16px); nav height includes the safe-area inset. Toasts are positioned from the same variable, so they stay above the nav.
 - [x] #2 Centred page container: equal gutters on every screen; one shared container.
   - Notes: all screens already shared one container (`<main>` in AppLayout). The uneven gutters came from the desktop scrollbar taking space on the right only; fixed with `scrollbar-gutter: stable both-edges` on html. No effect on phones (overlay scrollbars).
 - [x] #3 Consistent type scale: shared page title / subtitle / section heading styles.
