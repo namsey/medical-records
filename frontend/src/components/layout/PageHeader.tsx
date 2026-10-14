@@ -32,8 +32,8 @@ export function PageHeader({ title, subtitle, back, onBack, backIcon = 'arrow', 
         </Link>
       )}
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-2xl font-semibold leading-tight">{title}</h1>
-        {subtitle && <p className="truncate text-sm text-muted">{subtitle}</p>}
+        <h1 className="page-title truncate">{title}</h1>
+        {subtitle && <p className="page-subtitle truncate">{subtitle}</p>}
       </div>
       {action && <div className="flex shrink-0 items-center gap-1">{action}</div>}
     </header>

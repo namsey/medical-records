@@ -1,5 +1,6 @@
 import { FolderOpen } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { RecordCard } from '@/components/records/RecordCard'
 import { LinkButton } from '@/components/ui/Button'
 import { CardSkeletons, EmptyState, ErrorMessage } from '@/components/ui/feedback'
@@ -10,15 +11,12 @@ export function HomePage() {
   const recent = useRecentRecords(8)
 
   return (
-    <div className="space-y-6 pt-2">
-      <header>
-        <h1 className="text-3xl font-semibold leading-tight">Medical Records</h1>
-        <p className="text-sm text-muted">Your private health journal</p>
-      </header>
+    <>
+      <PageHeader title="Medical Records" subtitle="Your private health journal" />
 
       <section className="space-y-3" aria-labelledby="recent-heading">
         <div className="flex items-baseline justify-between">
-          <h2 id="recent-heading" className="text-xl font-semibold">
+          <h2 id="recent-heading" className="section-heading">
             Recent records
           </h2>
           {recent.data && recent.data.total > 0 && (
@@ -45,6 +43,6 @@ export function HomePage() {
           </ul>
         )}
       </section>
-    </div>
+    </>
   )
 }

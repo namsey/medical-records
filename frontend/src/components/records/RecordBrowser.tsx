@@ -175,7 +175,7 @@ export function RecordBrowser({ withSearchBox }: RecordBrowserProps) {
             <div className="space-y-4">
               {groupByMonth(records).map((group) => (
                 <section key={group.key} aria-labelledby={`month-${group.key}`} className="space-y-2">
-                  <h2 id={`month-${group.key}`} className="px-1 font-sans text-sm font-semibold text-muted">
+                  <h2 id={`month-${group.key}`} className="group-heading px-1">
                     {group.label}
                   </h2>
                   <ul className="space-y-3">

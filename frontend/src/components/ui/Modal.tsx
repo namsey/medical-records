@@ -72,7 +72,7 @@ export function Modal({ open, title, onClose, swipeToClose = false, children }: 
       >
         {swipeToClose && <div className="mx-auto mt-2 h-1.5 w-10 rounded-full bg-line sm:hidden" aria-hidden />}
         <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-4">
-          <h2 className="text-xl font-semibold">{title}</h2>
+          <h2 className="section-heading">{title}</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="grid size-11 place-items-center rounded-full text-muted hover:bg-wash">
             <X className="size-5" />
           </button>

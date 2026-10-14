@@ -66,6 +66,19 @@
   .field-input {
     @apply w-full min-h-12 rounded-xl border border-line bg-white px-3.5 py-2.5 text-base text-ink placeholder:text-muted/70 focus:border-brand-500;
   }
+  /* Type scale: one style per role, shared by every screen. */
+  .page-title {
+    @apply font-serif text-2xl font-semibold leading-tight text-ink;
+  }
+  .page-subtitle {
+    @apply text-sm text-muted;
+  }
+  .section-heading {
+    @apply font-serif text-lg font-semibold leading-snug text-ink;
+  }
+  .group-heading {
+    @apply font-sans text-sm font-semibold text-muted;
+  }
   .card {
     @apply rounded-2xl border border-line bg-card shadow-[0_1px_0_rgba(29,39,51,0.03)];
   }

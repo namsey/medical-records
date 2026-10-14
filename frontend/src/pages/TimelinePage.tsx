@@ -70,7 +70,7 @@ export function TimelinePage() {
       <div className="space-y-8">
         {groups.map((group) => (
           <section key={group.year} aria-label={group.year}>
-            <h2 className="mb-3 text-2xl font-semibold">{group.year}</h2>
+            <h2 className="section-heading mb-3">{group.year}</h2>
             <ol className="space-y-5 border-l-2 border-line pl-4">
               {group.days.map((day) => (
                 <li key={day.date} className="relative">
