@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { vi } from 'vitest'
 import { App } from '@/App'
 import { ToastProvider } from '@/components/ui/Toast'
@@ -57,13 +57,23 @@ export function renderApp(path = '/') {
     mutationCache: new MutationCache(),
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
   })
+  // Same shape as main.tsx: a data router with one catch-all route around the app's own <Routes>.
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        element: (
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        ),
+      },
+    ],
+    { initialEntries: [path] },
+  )
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
-        <ToastProvider>
-          <App />
-        </ToastProvider>
-      </MemoryRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   )
 }

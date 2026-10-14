@@ -320,6 +320,31 @@ describe('adding a record', () => {
     expect(await screen.findByRole('heading', { name: 'Medical Records' })).toBeInTheDocument()
   })
 
+  it('asks before a bottom-nav tab leaves a form with unsaved changes', async () => {
+    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] }, 'GET /api/records': emptyPage, 'GET /api/years': [] })
+    renderApp('/add/doctor_visit')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Reason for visit'), 'Chest pain')
+    const nav = screen.getByRole('navigation', { name: 'Main' })
+
+    await user.click(within(nav).getByRole('link', { name: 'Records' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Discard changes?' })).getByRole('button', { name: 'Keep editing' }))
+    expect(screen.getByLabelText('Reason for visit')).toHaveValue('Chest pain')
+
+    await user.click(within(nav).getByRole('link', { name: 'Records' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Discard' }))
+    expect(await screen.findByRole('heading', { name: 'Records' })).toBeInTheDocument()
+  })
+
+  it('lets an untouched form be left by any route without asking', async () => {
+    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] }, 'GET /api/records': emptyPage, 'GET /api/years': [] })
+    renderApp('/add/doctor_visit')
+    await screen.findByLabelText('Reason for visit')
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', { name: 'Records' }))
+    expect(await screen.findByRole('heading', { name: 'Records' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it('has a close control on the type picker', async () => {
     mockApi({ ...authed, 'GET /api/records': emptyPage })
     renderApp('/add')
