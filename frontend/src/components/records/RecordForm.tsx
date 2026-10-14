@@ -218,7 +218,7 @@ export function RecordForm({ initial, existing }: RecordFormProps) {
               <Button variant="ghost" size="sm" onClick={() => setForm((previous) => changeRecordType(previous, suggestion))}>
                 Switch to {RECORD_TYPE_INFO[suggestion].label}
               </Button>
-              <button type="button" onClick={() => setDismissedSuggestion(suggestion)} aria-label="Dismiss suggestion" className="grid size-10 shrink-0 place-items-center rounded-full hover:bg-brand-100">
+              <button type="button" onClick={() => setDismissedSuggestion(suggestion)} aria-label="Dismiss suggestion" className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-brand-100">
                 <X className="size-4" aria-hidden />
               </button>
             </div>
