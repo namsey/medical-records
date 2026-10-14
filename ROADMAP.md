@@ -12,7 +12,8 @@ Work top to bottom. Each item lists what "done" means.
   - Notes: Four shared classes in index.css: .page-title (serif 24px), .page-subtitle (14px muted), .section-heading (serif 18px) and .group-heading (14px muted, Records month headers). Every screen, dialog, form section and empty state uses them; Home now uses the shared PageHeader. The sign-in page keeps its larger welcome title.
 - [x] #4 Bottom nav labels share one baseline; the raised + button doesn't push its label down.
   - Notes: Every nav item has the same 28px icon slot; the + circle (44px, with a paper-coloured ring) is absolutely positioned to rise out of its slot above the bar, so it no longer pushes its label down. Measured: all five labels share one baseline at 360/390/430px.
-- [ ] #5 Record card: meta line "Type · Date · N files", one vertically centred chevron, title truncates.
+- [x] #5 Record card: meta line "Type · Date · N files", one vertically centred chevron, title truncates.
+  - Notes: Card meta reads "Type · Date · N files" (file count only when there are files, pluralised); the paperclip column is gone, leaving one vertically centred chevron; the title truncates. Each meta part stays whole, so at 360px the line wraps between parts rather than inside a date. Timeline items keep their own layout.
 - [ ] #6 Distinct category colours from one central type→colour map; no two types similar; none look like the primary action colour.
 - [ ] #7 Accessibility basics: aria-labels on icon buttons, nav landmark + aria-current, contrast ≥ 4.5:1 for text, 44px targets, focus-visible.
 

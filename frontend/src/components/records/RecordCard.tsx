@@ -1,6 +1,7 @@
-import { ChevronRight, Paperclip } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
+import { Fragment } from 'react'
 import { Link } from 'react-router-dom'
-import { formatDate } from '@/lib/format'
+import { formatDate, pluralize } from '@/lib/format'
 import { RECORD_TYPE_INFO } from '@/lib/recordTypes'
 import type { RecordSummary, RecordType } from '@/lib/types'
 import { TagPill } from '../ui/Chip'
@@ -29,13 +30,21 @@ const MAX_TAGS_SHOWN = 3
 export function RecordCard({ record }: { record: RecordSummary }) {
   const who = [record.doctor_name, record.lab_name, record.hospital].filter(Boolean)
   const extraTags = record.tags.length - MAX_TAGS_SHOWN
+  const meta = [RECORD_TYPE_INFO[record.record_type].label, formatDate(record.record_date)]
+  if (record.document_count > 0) meta.push(pluralize(record.document_count, 'file'))
   return (
     <Link to={`/records/${record.id}`} className="card flex items-center gap-3 p-4 transition active:bg-wash">
       <TypeIcon type={record.record_type} />
       <div className="min-w-0 flex-1">
         <p className="truncate font-semibold leading-snug">{record.title}</p>
-        <p className="truncate text-sm text-muted">
-          {RECORD_TYPE_INFO[record.record_type].label} · {formatDate(record.record_date)}
+        {/* Each part stays whole; on narrow screens the line only wraps between parts. */}
+        <p className="text-sm text-muted">
+          {meta.map((part, index) => (
+            <Fragment key={part}>
+              {index > 0 && ' · '}
+              <span className="whitespace-nowrap">{part}</span>
+            </Fragment>
+          ))}
         </p>
         {who.length > 0 && <p className="truncate text-sm text-muted">{who.join(' · ')}</p>}
         {record.tags.length > 0 && (
@@ -47,15 +56,7 @@ export function RecordCard({ record }: { record: RecordSummary }) {
           </div>
         )}
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-2 text-muted">
-        {record.document_count > 0 && (
-          <span className="inline-flex items-center gap-1 text-xs font-medium" aria-label={`${record.document_count} attachments`}>
-            <Paperclip className="size-4" aria-hidden />
-            {record.document_count}
-          </span>
-        )}
-        <ChevronRight className="size-5" aria-hidden />
-      </div>
+      <ChevronRight className="size-5 shrink-0 text-muted" aria-hidden />
     </Link>
   )
 }
