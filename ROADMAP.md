@@ -7,7 +7,7 @@ Work top to bottom. Each item lists what "done" means.
 - [x] #1 Bottom padding: no content hidden behind the bottom nav (safe-area aware, shared variable for nav height).
   - Notes: `--bottom-nav-height` in index.css; shared `<main>` uses `.pb-bottom-nav` (nav height + safe-area inset + 16px); nav height includes the safe-area inset. Toasts are positioned from the same variable, so they stay above the nav.
 - [x] #2 Centred page container: equal gutters on every screen; one shared container.
-  - Notes: all screens already shared one container (`<main>` in AppLayout). The uneven gutters came from the desktop scrollbar taking space on the right only; fixed with `scrollbar-gutter: stable both-edges` on html. No effect on phones (overlay scrollbars).
+  - Notes: One shared .page-container (centred, max-w-2xl, 16px gutters) in index.css, used by the app layout, the sign-in page and the server-error screen (sign-in keeps a narrower centred column). Desktop scrollbars reserve space on both edges (scrollbar-gutter). Re-verified on all 14 screens at 360/430px: equal 16px gutters, no horizontal scroll.
 - [x] #3 Consistent type scale: shared page title / subtitle / section heading styles.
   - Notes: Four shared classes in index.css: .page-title (serif 24px), .page-subtitle (14px muted), .section-heading (serif 18px) and .group-heading (14px muted, Records month headers). Every screen, dialog, form section and empty state uses them; Home now uses the shared PageHeader. The sign-in page keeps its larger welcome title.
 - [x] #4 Bottom nav labels share one baseline; the raised + button doesn't push its label down.

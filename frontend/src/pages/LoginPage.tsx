@@ -19,7 +19,7 @@ export function LoginPage() {
   if (user) return <Navigate to="/" replace />
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 py-10">
+    <main className="page-container flex min-h-dvh max-w-md flex-col justify-center py-10">
       <div className="mb-8 text-center">
         <div className="mx-auto mb-5 grid size-20 place-items-center rounded-3xl bg-brand-700 text-paper shadow-md">
           <svg viewBox="0 0 64 64" className="size-11" aria-hidden>
