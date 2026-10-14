@@ -1,15 +1,16 @@
-import { CalendarClock } from 'lucide-react'
+import { CalendarClock, FunnelX } from 'lucide-react'
 import { useMemo } from 'react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { FilterPanel } from '@/components/records/FilterPanel'
 import { RecordCard } from '@/components/records/RecordCard'
 import { ViewSwitch } from '@/components/records/ViewSwitch'
-import { LinkButton } from '@/components/ui/Button'
+import { Button, LinkButton } from '@/components/ui/Button'
 import { CardSkeletons, EmptyState, ErrorMessage } from '@/components/ui/feedback'
-import { useTimeline } from '@/hooks/queries'
+import { EMPTY_FILTERS, useTimeline } from '@/hooks/queries'
 import { useRecordFilters } from '@/hooks/useRecordFilters'
 import { errorMessage } from '@/lib/api'
 import { formatDayMonth, yearOf } from '@/lib/format'
+import { describeFilters } from '@/lib/recordList'
 import type { TimelineItem } from '@/lib/types'
 
 interface DayGroup {
@@ -56,12 +57,24 @@ export function TimelinePage() {
 
       {isPending && <CardSkeletons />}
       {isError && <ErrorMessage message={errorMessage(error)} onRetry={() => void refetch()} />}
-      {data && data.length === 0 && (
+      {data && data.length === 0 && filters.types.length > 0 && (
+        <EmptyState
+          icon={FunnelX}
+          title="No records match these filters"
+          description={`Nothing found for ${describeFilters({ ...EMPTY_FILTERS, types: filters.types })}. Try another type, or show everything.`}
+          action={
+            <Button variant="secondary" onClick={() => setFilters({ ...filters, types: [] })}>
+              Clear filters
+            </Button>
+          }
+        />
+      )}
+      {data && data.length === 0 && filters.types.length === 0 && (
         <EmptyState
           icon={CalendarClock}
           title="Nothing on the timeline"
-          description={filters.types.length ? 'No records of the selected types.' : 'Records you add will appear here in date order.'}
-          action={filters.types.length ? undefined : <LinkButton to="/add">Add a record</LinkButton>}
+          description="Records you add will appear here in date order."
+          action={<LinkButton to="/add">Add your first record</LinkButton>}
         />
       )}
 
