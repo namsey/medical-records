@@ -1,4 +1,4 @@
-import { FolderOpen, House, Plus, Search, type LucideIcon } from 'lucide-react'
+import { CircleUserRound, FolderOpen, House, Plus, Search, type LucideIcon } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 
 interface NavItem {
@@ -19,6 +19,12 @@ const ITEMS: NavItem[] = [
   },
   { to: '/add', label: 'Add', icon: Plus, isActive: (path) => path.startsWith('/add'), prominent: true },
   { to: '/search', label: 'Search', icon: Search, isActive: (path) => path.startsWith('/search') },
+  {
+    to: '/profile',
+    label: 'Profile',
+    icon: CircleUserRound,
+    isActive: (path) => ['/profile', '/more', '/doctors', '/labs'].some((prefix) => path.startsWith(prefix)),
+  },
 ]
 
 export function BottomNav() {

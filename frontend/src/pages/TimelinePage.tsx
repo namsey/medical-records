@@ -1,6 +1,5 @@
-import { CalendarClock, Menu } from 'lucide-react'
+import { CalendarClock } from 'lucide-react'
 import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { FilterPanel } from '@/components/records/FilterPanel'
 import { RecordCard } from '@/components/records/RecordCard'
@@ -49,14 +48,7 @@ export function TimelinePage() {
 
   return (
     <>
-      <PageHeader
-        title="Records"
-        action={
-          <Link to="/more" aria-label="More options" className="grid size-11 place-items-center rounded-full text-ink hover:bg-wash">
-            <Menu className="size-6" />
-          </Link>
-        }
-      />
+      <PageHeader title="Records" />
       <ViewSwitch active="timeline" />
       <div className="mb-5">
         <FilterPanel filters={filters} onChange={setFilters} typesOnly />
