@@ -38,11 +38,16 @@ export function BottomNav() {
                 }`}
               >
                 {prominent ? (
-                  <span className="grid size-10 place-items-center rounded-full bg-brand-700 text-white shadow-sm">
-                    <Icon className="size-6" aria-hidden />
+                  // Same-height slot as the other icons; the raised circle grows upwards out of it, so the label stays on the shared baseline.
+                  <span className="relative h-7 w-full">
+                    <span className="absolute bottom-0 left-1/2 grid size-11 -translate-x-1/2 place-items-center rounded-full bg-brand-700 text-white shadow-md ring-4 ring-paper">
+                      <Icon className="size-6" aria-hidden />
+                    </span>
                   </span>
                 ) : (
-                  <Icon className="size-6" strokeWidth={active ? 2.5 : 2} aria-hidden />
+                  <span className="grid h-7 place-items-center">
+                    <Icon className="size-6" strokeWidth={active ? 2.5 : 2} aria-hidden />
+                  </span>
                 )}
                 {label}
               </Link>
