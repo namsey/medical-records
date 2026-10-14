@@ -19,6 +19,24 @@
   --color-brand-700: #136a5c;
   --color-brand-800: #0f5449;
 
+  /* Record type colours: the one place they are defined. Each type has a strong colour (icons, text)
+     and a soft tint (backgrounds). Hues are spread apart and kept away from the teal brand/action colour;
+     each strong colour has at least 5:1 contrast on its tint and on the page. */
+  --color-type-doctor-visit: oklch(48% 0.136 250);
+  --color-type-doctor-visit-soft: oklch(93% 0.034 250);
+  --color-type-prescription: oklch(47% 0.19 298);
+  --color-type-prescription-soft: oklch(93% 0.037 298);
+  --color-type-scan: oklch(48% 0.18 345);
+  --color-type-scan-soft: oklch(93% 0.043 345);
+  --color-type-diagnosis: oklch(50% 0.17 27);
+  --color-type-diagnosis-soft: oklch(93% 0.034 27);
+  --color-type-lab-report: oklch(51% 0.11 70);
+  --color-type-lab-report-soft: oklch(95% 0.053 85);
+  --color-type-medical-document: oklch(42% 0.08 45);
+  --color-type-medical-document-soft: oklch(93% 0.04 75);
+  --color-type-other: oklch(47% 0.012 250);
+  --color-type-other-soft: oklch(93% 0.006 250);
+
   --color-danger-50: #fef3f2;
   --color-danger-600: #c0352b;
   --color-danger-700: #a02a21;
