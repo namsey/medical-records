@@ -43,7 +43,7 @@ export function Modal({ open, title, onClose, children }: ModalProps) {
         className="relative flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-3xl bg-paper shadow-xl sm:rounded-3xl"
       >
         <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-4">
-          <h2 className="text-xl font-semibold">{title}</h2>
+          <h2 className="section-heading">{title}</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="grid size-11 place-items-center rounded-full text-muted hover:bg-wash">
             <X className="size-5" />
           </button>

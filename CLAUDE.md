@@ -1,4 +1,3 @@
-===== FILE: CLAUDE.md =====
 # Working rules for this repo
 
 This is a personal medical records app (private health journal). The feature plan lives in ROADMAP.md.

@@ -7,7 +7,8 @@
   --color-paper: #faf8f3;
   --color-card: #ffffff;
   --color-ink: #1d2733;
-  --color-muted: #667085;
+  /* At least 5:1 on paper, card and wash backgrounds. */
+  --color-muted: #5d6679;
   --color-line: #e6e2d8;
   --color-wash: #f3f0e8;
 
@@ -19,13 +20,37 @@
   --color-brand-700: #136a5c;
   --color-brand-800: #0f5449;
 
+  /* Record type colours: the one place they are defined. Each type has a strong colour (icons, text)
+     and a soft tint (backgrounds). Hues are spread apart and kept away from the teal brand/action colour;
+     each strong colour has at least 5:1 contrast on its tint and on the page. */
+  --color-type-doctor-visit: oklch(48% 0.136 250);
+  --color-type-doctor-visit-soft: oklch(93% 0.034 250);
+  --color-type-prescription: oklch(47% 0.19 298);
+  --color-type-prescription-soft: oklch(93% 0.037 298);
+  --color-type-scan: oklch(48% 0.18 345);
+  --color-type-scan-soft: oklch(93% 0.043 345);
+  --color-type-diagnosis: oklch(50% 0.17 27);
+  --color-type-diagnosis-soft: oklch(93% 0.034 27);
+  --color-type-lab-report: oklch(51% 0.11 70);
+  --color-type-lab-report-soft: oklch(95% 0.053 85);
+  --color-type-medical-document: oklch(42% 0.08 45);
+  --color-type-medical-document-soft: oklch(93% 0.04 75);
+  --color-type-other: oklch(47% 0.012 250);
+  --color-type-other-soft: oklch(93% 0.006 250);
+
   --color-danger-50: #fef3f2;
   --color-danger-600: #c0352b;
   --color-danger-700: #a02a21;
 }
 
 @layer base {
+  :root {
+    /* Height of the fixed bottom navigation bar (including the + button), excluding the safe-area inset. */
+    --bottom-nav-height: 4.25rem;
+  }
   html {
+    /* Desktop scrollbars would otherwise eat into the right gutter only, so reserve the same space on both sides. */
+    scrollbar-gutter: stable both-edges;
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
   }
@@ -54,11 +79,33 @@
   [type="date"] {
     min-height: 3rem;
   }
+  /* Search boxes have their own labelled clear button; hide the browser's built-in one. */
+  [type="search"]::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
 @layer components {
   .field-input {
-    @apply w-full min-h-12 rounded-xl border border-line bg-white px-3.5 py-2.5 text-base text-ink placeholder:text-muted/70 focus:border-brand-500;
+    @apply w-full min-h-12 rounded-xl border border-line bg-white px-3.5 py-2.5 text-base text-ink placeholder:text-muted focus:border-brand-500;
+  }
+  /* The one page container: centred, max 42rem wide, 16px gutters. PageHeader's -mx-4/px-4 matches these gutters. */
+  .page-container {
+    @apply mx-auto w-full max-w-2xl px-4;
+  }
+  /* Type scale: one style per role, shared by every screen. */
+  .page-title {
+    @apply font-serif text-2xl font-semibold leading-tight text-ink;
+  }
+  .page-subtitle {
+    @apply text-sm text-muted;
+  }
+  .section-heading {
+    @apply font-serif text-lg font-semibold leading-snug text-ink;
+  }
+  .group-heading {
+    @apply font-sans text-sm font-semibold text-muted;
   }
   .card {
     @apply rounded-2xl border border-line bg-card shadow-[0_1px_0_rgba(29,39,51,0.03)];
@@ -66,5 +113,10 @@
 }
 
 .pb-safe {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 0.25rem);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Keeps the end of every scrolling page clear of the fixed bottom navigation bar. */
+.pb-bottom-nav {
+  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + 16px);
 }

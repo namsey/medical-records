@@ -66,7 +66,7 @@ export function SelectInput({ label, hint, error, required, className = '', chil
 export function FormSection({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <section className="card space-y-4 p-4">
-      {title && <h2 className="text-lg font-semibold">{title}</h2>}
+      {title && <h2 className="section-heading">{title}</h2>}
       {children}
     </section>
   )

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError, request } from './api'
 import { formatDate, formatDayMonth, formatFileSize, orNull, pluralize, todayIso } from './format'
+import { RECORD_TYPES, RECORD_TYPE_INFO } from './recordTypes'
 import { FORM_CONFIG, emptyForm, emptyMedicine, formFromRecord, formToInput, validateForm } from './recordForm'
 import type { MedicalRecord } from './types'
 
@@ -140,5 +141,16 @@ describe('api client', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
     await expect(request('/api/records/x', { method: 'DELETE' })).resolves.toBeUndefined()
     vi.unstubAllGlobals()
+  })
+})
+
+describe('record type colours', () => {
+  it('gives every type its own colour tokens from the central map', () => {
+    const tones = RECORD_TYPES.map((type) => RECORD_TYPE_INFO[type].tone)
+    expect(new Set(tones).size).toBe(RECORD_TYPES.length)
+    for (const type of RECORD_TYPES) {
+      const token = type.replace('_', '-')
+      expect(RECORD_TYPE_INFO[type].tone).toBe(`bg-type-${token}-soft text-type-${token}`)
+    }
   })
 })
