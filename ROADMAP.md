@@ -32,7 +32,10 @@ Work top to bottom. Each item lists what "done" means.
 - [x] #13 Helpful empty states for: no records, no search results, and filters with no matches (with a clear action).
   - Notes: Records, Search and Timeline tell apart: no records at all ("No records yet"/"Nothing on the timeline" + Add your first record), a search with no results ("No results for …", spelling hint or the active filters named, Clear search, plus Clear filters when filters are on), and filters with no matches ("No records match these filters" naming them, Clear filters that keeps search and sort). Home has its own no-records state. Each case and its action is covered by a test.
 
-## Level 3: Core features
+## Parked (not planned)
+Do not implement or suggest these unless I explicitly ask.
+
+### Level 3: Core features
 - [ ] #14 Family profiles. Depends on: #9. Profile model (name, relation, DOB, blood group, avatar colour). Every record belongs to a profile (migrate existing records to a default "Me" profile). Profile switcher in the header/Profile tab; all lists filter by the active profile.
 - [ ] #15 Emergency card. Depends on: #14. Per profile: blood group, allergies, chronic conditions, current medicines, emergency contacts (tap to call). Reachable in one tap from Profile.
 - [ ] #16 Medicine tracker. Depends on: #14. Medicine model (name, dose, frequency, timing, start/end date, linked prescription record). "Active medicines" list; medicines end automatically after the end date.
@@ -41,7 +44,7 @@ Work top to bottom. Each item lists what "done" means.
 - [ ] #19 Doctors and hospitals list built automatically from existing records' doctor/hospital fields (de-duplicated, case-insensitive), each showing its linked records. Editable details (phone, address, speciality).
 - [ ] #20 Home "Today" dashboard. Depends on: #16, #17. Sections: today's medicines, next follow-up, recently added (3), quick upload. Each hides when empty.
 
-## Level 4: Intermediate
+### Level 4: Intermediate
 - [ ] #21 App lock: PIN (and biometrics/WebAuthn where available), lock after X minutes in the background, hide content in the app switcher, forgot-PIN flow that doesn't silently wipe data.
 - [ ] #22 Backup / export / restore: export all data + attachments as one file (zip/JSON); restore with a preview and merge-or-replace choice; show the last backup date.
 - [ ] #23 Reminders/notifications for medicine doses (#16) and follow-ups (#17); per-item on/off; respect permission denial gracefully. Depends on: #16, #17.
@@ -49,7 +52,7 @@ Work top to bottom. Each item lists what "done" means.
 - [ ] #25 Doctor summary PDF: choose a profile, date range and record types → PDF with profile basics, emergency info, active medicines, and a record list with key details. Generated on the device.
 - [ ] #26 Insurance and bills: policy details per profile, bills attached to records with amount, and claim status (not filed / filed / settled).
 
-## Level 5: Advanced
+### Level 5: Advanced
 - [ ] #27 Encrypted storage at rest for records and attachments (key derived from the app lock PIN, or a secure key store). Depends on: #21. Includes a migration of existing data.
 - [ ] #28 Scan a report: camera/upload → OCR → pre-fill date, doctor, hospital, title and suggested type for the user to confirm. Prefer on-device OCR. Any cloud service needs my approval first.
 - [ ] #29 Full-text search inside attachments using the OCR text. Depends on: #28.
