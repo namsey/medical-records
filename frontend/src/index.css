@@ -88,7 +88,7 @@
 
 @layer components {
   .field-input {
-    @apply w-full min-h-12 rounded-xl border border-line bg-white px-3.5 py-2.5 text-base text-ink placeholder:text-muted/70 focus:border-brand-500;
+    @apply w-full min-h-12 rounded-xl border border-line bg-white px-3.5 py-2.5 text-base text-ink placeholder:text-muted focus:border-brand-500;
   }
   /* The one page container: centred, max 42rem wide, 16px gutters. PageHeader's -mx-4/px-4 matches these gutters. */
   .page-container {
