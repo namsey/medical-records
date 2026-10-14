@@ -167,6 +167,38 @@ describe('adding a record', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('notes.txt')
     expect(screen.getByText('ok.pdf')).toBeInTheDocument()
   })
+
+  it('closes an untouched form without asking', async () => {
+    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] }, 'GET /api/records': emptyPage })
+    renderApp('/add/doctor_visit')
+    await userEvent.click(await screen.findByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Medical Records' })).toBeInTheDocument()
+  })
+
+  it('asks before discarding unsaved changes', async () => {
+    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] }, 'GET /api/records': emptyPage })
+    renderApp('/add/doctor_visit')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Reason for visit'), 'Chest pain')
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Reason for visit')).toHaveValue('Chest pain')
+
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Discard' }))
+    expect(await screen.findByRole('heading', { name: 'Medical Records' })).toBeInTheDocument()
+  })
+
+  it('has a close control on the type picker', async () => {
+    mockApi({ ...authed, 'GET /api/records': emptyPage })
+    renderApp('/add')
+    await userEvent.click(await screen.findByRole('button', { name: 'Close' }))
+    expect(await screen.findByRole('heading', { name: 'Medical Records' })).toBeInTheDocument()
+  })
 })
 
 describe('record detail', () => {

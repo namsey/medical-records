@@ -22,10 +22,7 @@ export function EditRecordPage() {
   }
 
   return (
-    <>
-      <PageHeader title="Edit record" back />
-      {/* Keyed so the form starts from the freshly loaded record; later background refetches never overwrite typing. */}
-      <RecordForm key={record.id} initial={formFromRecord(record)} existing={record} />
-    </>
+    // Keyed so the form starts from the freshly loaded record; later background refetches never overwrite typing.
+    <RecordForm key={record.id} title="Edit record" initial={formFromRecord(record)} existing={record} />
   )
 }

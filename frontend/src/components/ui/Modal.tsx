@@ -60,13 +60,14 @@ interface ConfirmDialogProps {
   title: string
   message: string
   confirmLabel?: string
+  cancelLabel?: string
   loading?: boolean
   error?: string | null
   onConfirm: () => void
   onCancel: () => void
 }
 
-export function ConfirmDialog({ open, title, message, confirmLabel = 'Delete', loading, error, onConfirm, onCancel }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', loading, error, onConfirm, onCancel }: ConfirmDialogProps) {
   return (
     <Modal open={open} title={title} onClose={onCancel}>
       <p className="text-base text-muted">{message}</p>
@@ -77,7 +78,7 @@ export function ConfirmDialog({ open, title, message, confirmLabel = 'Delete', l
       )}
       <div className="mt-5 grid grid-cols-2 gap-3">
         <Button variant="secondary" onClick={onCancel} disabled={loading}>
-          Cancel
+          {cancelLabel}
         </Button>
         <Button variant="danger" onClick={onConfirm} loading={loading}>
           {confirmLabel}

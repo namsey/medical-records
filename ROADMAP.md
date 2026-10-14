@@ -19,7 +19,8 @@ Work top to bottom. Each item lists what "done" means.
   - Notes: Audited 22 screens/states (incl. document viewer, doctor/lab forms, filter panels, dialogs, sign-in) with axe-core (WCAG 2.1 AA + best practice) plus scans for <44px targets, unlabelled icon controls and placeholder contrast: 0 issues. Muted text token is #5d6679 (≥5:1 on paper, card, wash), placeholders use it at full strength (5.8:1); chips, small buttons, tag links/suggestions and phone/email links are ≥44px; tag remove buttons have a 44px hit area. Nav landmark has aria-current; focus-visible rings throughout.
 
 ## Level 2: UX and structure
-- [ ] #8 Add record screen has a close/back control; cancelling with unsaved changes asks for confirmation.
+- [x] #8 Add record screen has a close/back control; cancelling with unsaved changes asks for confirmation.
+  - Notes: Add form has a Close (X) control and edit form a Back arrow; Cancel/Close/Back with unsaved changes (fields or picked files) opens a "Discard changes?" dialog, and reload/tab close triggers the browser prompt. The /add picker also has Close. Deferred: bottom-nav taps and the browser Back button are not intercepted (needs a data router for useBlocker).
 - [ ] #9 Navigation: remove the hamburger menu; bottom nav = Home · Records · (+) · Search · Profile, with + centred. Move the old menu contents into Profile. Remove the duplicate "Add record" button and search bar from Home.
 - [ ] #10 Type picker: + opens a bottom sheet with a 2–3 column grid of record types (icon + label), all visible without scrolling; tapping one opens that type's form. Closes on swipe down, backdrop tap or Esc.
 - [ ] #11 Records filters: horizontally scrolling filter chips (All + each type + years with records), a sort control (newest/oldest), and the list grouped under month/year headers. The filter state shows in the "N records" count.
