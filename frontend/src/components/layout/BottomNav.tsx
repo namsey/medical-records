@@ -45,7 +45,7 @@ export function BottomNav() {
             return (
               <li key={to} className="flex flex-1">
                 {prominent ? (
-                  <button type="button" onClick={() => setPickingType(true)} aria-label="Add record" aria-haspopup="dialog" aria-expanded={pickingType} className={className}>
+                  <button type="button" onClick={() => setPickingType(true)} aria-label="Add record" aria-current={active ? 'page' : undefined} aria-haspopup="dialog" aria-expanded={pickingType} className={className}>
                     {/* Same-height slot as the other icons; the raised circle grows upwards out of it, so the label stays on the shared baseline. */}
                     <span className="relative h-7 w-full">
                       <span className="absolute bottom-0 left-1/2 grid size-11 -translate-x-1/2 place-items-center rounded-full bg-brand-700 text-white shadow-md ring-4 ring-paper">

@@ -196,6 +196,14 @@ describe('record type sheet', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('marks the + as the current page while adding a record', async () => {
+    mockApi({ ...authed, 'GET /api/records': emptyPage, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf'] } })
+    renderApp('/add/scan')
+    const nav = await screen.findByRole('navigation', { name: 'Main' })
+    expect(within(nav).getByRole('button', { name: 'Add record' })).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current')
+  })
+
   it('closes on Escape', async () => {
     await openSheet()
     await userEvent.keyboard('{Escape}')
