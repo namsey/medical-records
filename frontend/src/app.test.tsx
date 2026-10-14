@@ -135,10 +135,45 @@ describe('home and records', () => {
     expect(screen.getByText('1 record found')).toBeInTheDocument()
   })
 
-  it('shows a no-results message for a search with no matches', async () => {
-    mockApi({ ...authed, 'GET /api/search': emptyPage, 'GET /api/records': emptyPage, 'GET /api/tags': [] })
+  it('shows a no-results message for a search with no matches, with a way to clear it', async () => {
+    const calls = mockApi({ ...authed, 'GET /api/search': emptyPage, 'GET /api/records': { items: [summary()], total: 1, limit: 20, offset: 0 }, 'GET /api/tags': [] })
     renderApp('/search?q=zzz')
-    expect(await screen.findByText('No matching records')).toBeInTheDocument()
+    const empty = (await screen.findByRole('heading', { name: 'No results for “zzz”' })).parentElement!
+    expect(within(empty).getByText(/check the spelling/i)).toBeInTheDocument()
+    expect(within(empty).queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument()
+    await userEvent.click(within(empty).getByRole('button', { name: 'Clear search' }))
+    expect(await screen.findByRole('link', { name: /Lab Report - Vitamin B12/ })).toBeInTheDocument()
+    expect(calls.filter((c) => c.path === '/api/records').length).toBeGreaterThan(0)
+  })
+
+  it('offers to clear filters when a search has no matches with filters on', async () => {
+    mockApi({ ...authed, 'GET /api/search': emptyPage, 'GET /api/tags': [] })
+    renderApp('/search?q=zzz&type=scan')
+    expect(await screen.findByRole('heading', { name: 'No results for “zzz”' })).toBeInTheDocument()
+    expect(screen.getByText(/filters on \(Scan\)/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument()
+  })
+
+  it('explains when filters match nothing and clears them', async () => {
+    mockApi({
+      ...authed,
+      'GET /api/tags': [],
+      'GET /api/years': [{ year: 2024, record_count: 1 }],
+      'GET /api/records': (call) => ({ json: call.params.get('record_type') ? emptyPage : { items: [summary()], total: 1, limit: 20, offset: 0 } }),
+    })
+    renderApp('/records?type=scan&year=2024')
+    expect(await screen.findByRole('heading', { name: 'No records match these filters' })).toBeInTheDocument()
+    expect(screen.getByText(/Nothing found for Scan · 2024/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(await screen.findByRole('link', { name: /Lab Report - Vitamin B12/ })).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Quick filters' })).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('invites adding the first record when there are none', async () => {
+    mockApi({ ...authed, 'GET /api/records': emptyPage, 'GET /api/tags': [], 'GET /api/years': [] })
+    renderApp('/records')
+    expect(await screen.findByRole('heading', { name: 'No records yet' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Add your first record' })).toHaveAttribute('href', '/add')
   })
 })
 

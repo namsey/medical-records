@@ -3,7 +3,7 @@ import { ApiError, request } from './api'
 import { formatDate, formatDayMonth, formatFileSize, orNull, pluralize, todayIso } from './format'
 import { RECORD_TYPES, RECORD_TYPE_INFO } from './recordTypes'
 import { EMPTY_FILTERS, filtersToParams } from '@/hooks/queries'
-import { describeCount, groupByMonth } from './recordList'
+import { describeCount, describeFilters, groupByMonth } from './recordList'
 import { suggestRecordType } from './typeSuggestion'
 import { FORM_CONFIG, changeRecordType, droppedDetails, emptyForm, emptyMedicine, formFromRecord, formToInput, validateForm } from './recordForm'
 import type { MedicalRecord, RecordSummary } from './types'
@@ -180,6 +180,11 @@ describe('record list helpers', () => {
     expect(describeCount(4, { ...EMPTY_FILTERS, types: ['scan', 'other'], tags: ['Knee'] })).toBe('4 records of 2 types tagged Knee')
     expect(describeCount(2, { ...EMPTY_FILTERS, dateFrom: '2026-01-01' })).toBe('2 records from 01 Jan 2026')
     expect(describeCount(1, { ...EMPTY_FILTERS, q: 'thyroid' })).toBe('1 record found')
+  })
+
+  it('describes the active filters in words', () => {
+    expect(describeFilters(EMPTY_FILTERS)).toBe('')
+    expect(describeFilters({ ...EMPTY_FILTERS, q: 'x', types: ['lab_report'], year: '2024', tags: ['Knee', 'Blood'] })).toBe('Lab Report · 2024 · tagged Knee, Blood')
   })
 
   it('turns a year into date bounds, keeping the stricter of year and range, and sends the sort', () => {

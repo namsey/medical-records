@@ -48,3 +48,13 @@ export function describeCount(total: number, filters: RecordFilters): string {
   if (filters.q.trim()) parts.push('found')
   return parts.join(' ')
 }
+
+/** The active filters in words, e.g. "Lab Report · 2024 · tagged Knee" (search text not included). */
+export function describeFilters(filters: RecordFilters): string {
+  const parts = filters.types.map((type) => RECORD_TYPE_INFO[type].label)
+  if (filters.year) parts.push(filters.year)
+  if (filters.dateFrom) parts.push(`from ${formatDate(filters.dateFrom)}`)
+  if (filters.dateTo) parts.push(`until ${formatDate(filters.dateTo)}`)
+  if (filters.tags.length > 0) parts.push(`tagged ${filters.tags.join(', ')}`)
+  return parts.join(' · ')
+}
