@@ -11,6 +11,7 @@ import { InvitePage } from './pages/InvitePage'
 import { LabsPage } from './pages/LabsPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { PrivacyPage } from './pages/PrivacyPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RecordDetailPage } from './pages/RecordDetailPage'
 import { RecordsPage } from './pages/RecordsPage'
@@ -32,6 +33,7 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/invite/:token" element={<InvitePage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />
           <Route path="records" element={<RecordsPage />} />

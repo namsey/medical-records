@@ -196,19 +196,38 @@ without an invite:
 In the same place you can revoke a pending invite, see each account's storage, and disable, enable or delete an
 account. Deleting an account removes all of its records and files.
 
+## Privacy and your data
+
+- After signing in for the first time, everyone (the admin too) reads the privacy notice and agrees before using the
+  app. The server refuses records until then. The notice is at `/privacy` and is linked from the login page. When
+  its meaning changes, change `PRIVACY_VERSION` in `backend/app/privacy.py`, and everyone is asked again.
+- **Profile → Download my data** gives a ZIP with `records.json` and every attached file under its original name.
+- **Profile → Delete my account** permanently deletes the account, its records and files. Copies in the encrypted
+  server backups expire within 6 months. The admin account cannot delete itself.
+- The grievance contact shown in the app comes from `GRIEVANCE_NAME` and `GRIEVANCE_EMAIL` (default: the admin's
+  email).
+- **Admin → Activity** lists sign-ins, invites and account changes for one year. It never holds record contents,
+  file names or IP addresses.
+- If something goes wrong, follow [docs/BREACH_RUNBOOK.md](docs/BREACH_RUNBOOK.md).
+
+The notice and the runbook are plain-language drafts, not legal advice. Have them checked before inviting anyone.
+
 ## Backup and restore
 
 On a server, nightly encrypted backups of all data go to Oracle Object Storage in Mumbai, with a weekly copy to
-a disk at home and a monthly restore drill: see [DEPLOY.md](DEPLOY.md). The in-app backup below is your own copy
-of your own data.
+a disk at home and a monthly restore drill: see [DEPLOY.md](DEPLOY.md). The downloads below are your own copy of
+your own data.
 
-In the app open **Home → menu (top right) → Backup and export**:
+In the app open **Profile → Your data**:
 
-- **Full backup (ZIP)** → `medical-records-backup-YYYY-MM-DD.zip` containing a copy of the SQLite database and
-  your uploaded files. The copy holds only the signed-in account's data; other accounts and login sessions are
-  removed from it (and the file is compacted, so nothing deleted can be recovered from it).
+- **Download my data (ZIP)** → `records.json` plus every attached file under its original name, one folder per
+  record.
 - **Export records (JSON)** → your structured data (doctors, laboratories, records, medicines, results, tags and
   attachment metadata) without the files.
+
+For restoring a single-person install, `GET /api/backup` still gives `medical-records-backup-YYYY-MM-DD.zip`: a
+copy of the SQLite database holding only the signed-in account's data (other accounts and login sessions removed,
+then compacted) plus that account's files.
 
 Backups contain your private medical data. Store them somewhere safe (they are not encrypted).
 

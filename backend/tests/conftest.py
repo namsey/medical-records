@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.database import Base, SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
+from app.privacy import PRIVACY_VERSION  # noqa: E402
 from app.services import rate_limit, sessions  # noqa: E402
 
 CSRF_HEADERS = {"X-Requested-With": "XMLHttpRequest"}
@@ -69,9 +70,13 @@ def anon() -> TestClient:
     return TestClient(app, headers=CSRF_HEADERS)
 
 
-def make_session_token(email: str = "owner@example.com") -> str:
+def make_session_token(email: str = "owner@example.com", consented: bool = True) -> str:
+    """A session for `email` (the account is made if needed). By default it has agreed to the privacy notice."""
     with SessionLocal() as db:
         user = sessions.get_or_create_user(db, email, "Owner")
+        if consented:
+            user.consent_version = PRIVACY_VERSION
+            db.commit()
         return sessions.create_session(db, user)
 
 

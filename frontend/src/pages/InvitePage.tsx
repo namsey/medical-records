@@ -39,6 +39,11 @@ export function InvitePage() {
             <ShieldCheck className="size-4 shrink-0" aria-hidden />
             Use the Google account this invite was sent to. The link works once.
           </p>
+          <p className="mt-4 text-center text-sm">
+            <Link to="/privacy" className="font-semibold text-brand-700">
+              Privacy notice
+            </Link>
+          </p>
         </>
       )}
     </AuthShell>

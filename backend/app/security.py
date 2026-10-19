@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.models import User
+from app.privacy import PRIVACY_VERSION
 from app.services.sessions import get_user_for_token, is_admin
 
 SESSION_COOKIE = "session"
@@ -47,7 +48,14 @@ def csrf_protect(request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Request from another site")
 
 
-def require_admin(user: User = Depends(get_current_user)) -> User:
+def get_consented_user(user: User = Depends(get_current_user)) -> User:
+    """The signed-in user, once they have agreed to the current privacy notice (403 consent_required before)."""
+    if user.consent_version != PRIVACY_VERSION:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="consent_required")
+    return user
+
+
+def require_admin(user: User = Depends(get_consented_user)) -> User:
     """Admin-only routes answer 404 to everyone else, as if they did not exist."""
     if not is_admin(user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
@@ -55,5 +63,5 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
 
 
 # Applied to every private router.
-private_dependencies = [Depends(get_current_user), Depends(csrf_protect)]
+private_dependencies = [Depends(get_consented_user), Depends(csrf_protect)]
 admin_dependencies = [Depends(require_admin), Depends(csrf_protect)]

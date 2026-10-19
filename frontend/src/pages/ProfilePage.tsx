@@ -1,10 +1,11 @@
-import { CalendarClock, ChevronRight, Database, FileJson, FlaskConical, LogOut, MonitorSmartphone, Stethoscope, UsersRound, type LucideIcon } from 'lucide-react'
-import { useState } from 'react'
+import { CalendarClock, ChevronRight, Database, FileJson, FlaskConical, LogOut, MonitorSmartphone, ShieldCheck, Stethoscope, Trash2, UsersRound, type LucideIcon } from 'lucide-react'
+import { useCallback, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
-import { ConfirmDialog } from '@/components/ui/Modal'
-import { useLogout, useLogoutAll, useMe, useStorageUse } from '@/hooks/queries'
+import { TextInput } from '@/components/ui/Field'
+import { ConfirmDialog, Modal } from '@/components/ui/Modal'
+import { useDeleteMyAccount, useLogout, useLogoutAll, useMe, usePrivacyInfo, useStorageUse } from '@/hooks/queries'
 import { errorMessage } from '@/lib/api'
 import { formatFileSize } from '@/lib/format'
 
@@ -67,11 +68,58 @@ function StorageBar() {
   )
 }
 
+function DeleteAccountDialog({ open, email, onClose }: { open: boolean; email: string; onClose: () => void }) {
+  const [typed, setTyped] = useState('')
+  const deleteAccount = useDeleteMyAccount()
+  const navigate = useNavigate()
+  const { reset } = deleteAccount
+  // Stable, because Modal re-focuses its panel whenever onClose changes (which would steal focus from the input).
+  const close = useCallback(() => {
+    setTyped('')
+    reset()
+    onClose()
+  }, [reset, onClose])
+
+  return (
+    <Modal open={open} title="Delete my account?" onClose={close}>
+      <p className="text-base text-muted">
+        This permanently deletes your account with all your records, doctors, laboratories and files. It cannot be
+        undone. Download your data first if you want to keep a copy. Copies inside the encrypted server backups
+        disappear as those backups expire, within 6 months.
+      </p>
+      <div className="mt-4">
+        <TextInput label="Type your email to confirm" autoComplete="off" value={typed} onChange={(e) => setTyped(e.target.value)} />
+      </div>
+      {deleteAccount.isError && (
+        <p role="alert" className="mt-3 rounded-xl bg-danger-50 p-3 text-sm text-danger-700">
+          {errorMessage(deleteAccount.error)}
+        </p>
+      )}
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        <Button variant="secondary" onClick={close} disabled={deleteAccount.isPending}>
+          Cancel
+        </Button>
+        <Button
+          variant="danger"
+          disabled={typed.trim().toLowerCase() !== email.toLowerCase()}
+          loading={deleteAccount.isPending}
+          onClick={() => deleteAccount.mutate(typed, { onSuccess: () => navigate('/login', { replace: true }) })}
+        >
+          Delete
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
 export function ProfilePage() {
   const { data: user } = useMe()
   const logout = useLogout()
   const logoutAll = useLogoutAll()
   const [confirmingLogoutAll, setConfirmingLogoutAll] = useState(false)
+  const [deletingAccount, setDeletingAccount] = useState(false)
+  const closeDeleteAccount = useCallback(() => setDeletingAccount(false), [])
+  const { data: privacy } = usePrivacyInfo()
   const navigate = useNavigate()
 
   return (
@@ -90,11 +138,11 @@ export function ProfilePage() {
       <section className="space-y-3" aria-labelledby="backup-heading">
         <div>
           <h2 id="backup-heading" className="section-heading">
-            Backup and export
+            Your data
           </h2>
-          <p className="page-subtitle">Keep a copy of your records somewhere safe. Backups contain private medical data.</p>
+          <p className="page-subtitle">Keep a copy of your records somewhere safe. The download contains private medical data.</p>
         </div>
-        <DownloadLink href="/api/backup" icon={Database} title="Full backup (ZIP)" hint="Your records and all your uploaded files" />
+        <DownloadLink href="/api/account/export" icon={Database} title="Download my data (ZIP)" hint="All your records, and every file under its own name" />
         <DownloadLink href="/api/export/json" icon={FileJson} title="Export records (JSON)" hint="Structured data without the files" />
       </section>
 
@@ -113,6 +161,29 @@ export function ProfilePage() {
           Sign out of all devices
         </Button>
       </section>
+
+      <section className="space-y-3" aria-labelledby="privacy-heading">
+        <h2 id="privacy-heading" className="section-heading">
+          Privacy
+        </h2>
+        <MenuLink to="/privacy" icon={ShieldCheck} title="Privacy notice" hint="What is kept, where, and your rights" />
+        {privacy && (
+          <p className="text-sm text-muted">
+            Questions or complaints about your data: {privacy.grievance_name},{' '}
+            <a href={`mailto:${privacy.grievance_email}`} className="font-semibold text-brand-700">
+              {privacy.grievance_email}
+            </a>
+          </p>
+        )}
+        {user && !user.is_admin && (
+          <Button variant="dangerOutline" className="w-full" onClick={() => setDeletingAccount(true)}>
+            <Trash2 className="size-5" aria-hidden />
+            Delete my account
+          </Button>
+        )}
+      </section>
+
+      {user && <DeleteAccountDialog open={deletingAccount} email={user.email} onClose={closeDeleteAccount} />}
 
       <ConfirmDialog
         open={confirmingLogoutAll}

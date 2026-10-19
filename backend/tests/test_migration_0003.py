@@ -40,3 +40,18 @@ def test_0004_gives_every_existing_account_the_default_storage_limit(tmp_path):
         assert connection.execute("SELECT quota_bytes FROM users").fetchall() == [(None,), (None,)]
     finally:
         connection.close()
+
+
+def test_0005_asks_every_existing_account_for_consent_and_adds_the_audit_log(tmp_path):
+    database = tmp_path / "old.db"
+    _seed_0001(database, users=[("u-owner", "owner@example.com")])
+    _migrate(database, "0004")
+    before = _rows(database)
+    _migrate(database, "0005")
+    assert _rows(database) == before
+    connection = sqlite3.connect(database)
+    try:
+        assert connection.execute("SELECT consent_version, consented_at FROM users").fetchall() == [(None, None)]
+        assert connection.execute("SELECT count(*) FROM audit_events").fetchone()[0] == 0
+    finally:
+        connection.close()

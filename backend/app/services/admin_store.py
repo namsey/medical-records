@@ -4,15 +4,17 @@ Accounts and invites only. It never reads a record, a doctor, a laboratory or a 
 document sizes, and deleting an account removes its data without looking at it.
 """
 
+from datetime import datetime
+
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Document, Invite, MedicalRecord, User, utcnow
-from app.schemas import AdminUserOut, InviteCreated, InviteOut
+from app.schemas import AdminUserOut, AuditOut, InviteCreated, InviteOut
 from app.security import require_admin
-from app.services import invites, sessions
+from app.services import accounts, audit, invites, sessions
 from app.services.storage import FileStore, get_file_store, quota_bytes
 
 
@@ -37,13 +39,16 @@ class AdminStore:
 
     def create_invite(self, email: str) -> InviteCreated:
         invite, token = invites.create_invite(self.db, email, self.admin)
+        audit.record(self.db, "invite_created", actor=self.admin, target_email=invite.email)
         return InviteCreated(**_invite_out(invite).model_dump(), link=invites.invite_link(token))
 
     def list_invites(self) -> list[InviteOut]:
         return [_invite_out(invite) for invite in invites.list_invites(self.db)]
 
     def revoke_invite(self, invite_id: str) -> InviteOut:
-        return _invite_out(invites.revoke_invite(self.db, invite_id))
+        invite = invites.revoke_invite(self.db, invite_id)
+        audit.record(self.db, "invite_revoked", actor=self.admin, target_email=invite.email)
+        return _invite_out(invite)
 
     # ------------------------------------------------------------ accounts
 
@@ -95,6 +100,7 @@ class AdminStore:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
         user.quota_bytes = None if quota_mb is None else quota_mb * 1024 * 1024
         self.db.commit()
+        audit.record(self.db, "quota_changed", actor=self.admin, target=user, detail="default" if quota_mb is None else f"{quota_mb} MB")
 
     def set_disabled(self, user_id: str, disabled: bool) -> None:
         user = self._changeable_user(user_id)
@@ -102,6 +108,7 @@ class AdminStore:
         if disabled:
             sessions.delete_user_sessions(self.db, user.id)
         self.db.commit()
+        audit.record(self.db, "account_disabled" if disabled else "account_enabled", actor=self.admin, target=user)
 
     def delete_user(self, user_id: str, confirm_email: str) -> None:
         """Delete the account and everything in it: records, doctors, laboratories, tags, files and sessions."""
@@ -110,12 +117,25 @@ class AdminStore:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Type the account's email to confirm"
             )
-        # Records first (their documents, medicines, results and tag links go with them), so no record still
-        # points at a doctor or laboratory when the account's other rows are removed with it.
-        self.db.execute(delete(MedicalRecord).where(MedicalRecord.user_id == user.id))
-        self.db.execute(delete(User).where(User.id == user.id))
-        self.db.commit()
-        self.files.delete_user_files(user.id)
+        email = user.email
+        accounts.delete_account(self.db, user, self.files)
+        audit.record(self.db, "account_deleted", actor=self.admin, target_email=email)
+
+
+    # ------------------------------------------------------------ audit log
+
+    def audit_log(self, before: datetime | None, limit: int) -> list[AuditOut]:
+        return [
+            AuditOut(
+                at=event.at,
+                action=event.action,
+                label=audit.ACTIONS[event.action],
+                actor_email=event.actor_email,
+                target_email=event.target_email,
+                detail=event.detail,
+            )
+            for event in audit.recent(self.db, before=before, limit=limit)
+        ]
 
 
 def get_admin_store(admin: User = Depends(require_admin), db: Session = Depends(get_db)) -> AdminStore:

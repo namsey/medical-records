@@ -565,7 +565,7 @@ describe('profile', () => {
     expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /timeline/i })).toHaveAttribute('href', '/timeline')
     expect(screen.getByRole('link', { name: /doctors/i })).toHaveAttribute('href', '/doctors')
-    expect(screen.getByRole('link', { name: /full backup/i })).toHaveAttribute('href', '/api/backup')
+    expect(screen.getByRole('link', { name: /download my data/i })).toHaveAttribute('href', '/api/account/export')
     expect(screen.getByRole('link', { name: /export records/i })).toHaveAttribute('href', '/api/export/json')
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
     expect(screen.getByText(/naman@example\.com/)).toBeInTheDocument()
@@ -740,5 +740,79 @@ describe('admin', () => {
     await user.click(confirm())
     await waitFor(() => expect(calls.map((c) => c.path)).toContain('/api/admin/users/u2/delete'))
     expect(calls.find((c) => c.path === '/api/admin/users/u2/delete')!.body).toEqual({ confirm_email: 'Friend@Example.com' })
+  })
+})
+
+describe('privacy', () => {
+  const privacy = { 'GET /api/auth/privacy': { version: '2026-10', grievance_name: 'Naman', grievance_email: 'privacy@example.com' } }
+
+  it('asks for consent before anything else, and continues once given', async () => {
+    let consented = false
+    const calls = mockApi({
+      ...privacy,
+      'GET /api/auth/me': () => ({ json: { ...USER, needs_consent: !consented } }),
+      'POST /api/account/consent': () => {
+        consented = true
+        return { status: 204 }
+      },
+      'GET /api/records': emptyPage,
+    })
+    renderApp('/')
+    expect(await screen.findByRole('heading', { name: 'Before you start' })).toBeInTheDocument()
+    expect(screen.getByText(/one server in India \(Oracle Cloud, Mumbai\)/)).toBeInTheDocument()
+    expect(await screen.findByText((_, el) => el?.tagName === 'LI' && Boolean(el.textContent?.includes('contact Naman (privacy@example.com)')))).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'I agree' }))
+    expect(await screen.findByText('No records yet')).toBeInTheDocument()
+    expect(calls.find((c) => c.path === '/api/account/consent')!.body).toEqual({ version: '2026-10' })
+  })
+
+  it('shows the privacy notice without signing in, linked from the login page', async () => {
+    mockApi({ ...privacy, 'GET /api/auth/me': () => ({ status: 401, json: {} }) })
+    renderApp('/login')
+    expect(await screen.findByRole('link', { name: 'Privacy notice' })).toHaveAttribute('href', '/privacy')
+    renderApp('/privacy')
+    expect(await screen.findByRole('heading', { name: 'Privacy notice' })).toBeInTheDocument()
+    expect(screen.getAllByText(/Data Protection Board of India/).length).toBeGreaterThan(0)
+  })
+
+  it('shows the grievance contact on Profile and deletes the account after the email is typed', async () => {
+    const calls = mockApi({ ...authed, ...privacy, 'POST /api/account/delete': { ok: true } })
+    renderApp('/profile')
+    expect(await screen.findByRole('link', { name: 'privacy@example.com' })).toHaveAttribute('href', 'mailto:privacy@example.com')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Delete my account' }))
+    const dialog = () => screen.getByRole('dialog', { name: 'Delete my account?' })
+    expect(within(dialog()).getByText(/within 6 months/)).toBeInTheDocument()
+    const confirm = () => within(dialog()).getByRole('button', { name: 'Delete' })
+    expect(confirm()).toBeDisabled()
+    await user.type(within(dialog()).getByLabelText('Type your email to confirm'), 'Naman@Example.com')
+    await user.click(confirm())
+    expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument()
+    expect(calls.find((c) => c.path === '/api/account/delete')!.body).toEqual({ confirm_email: 'Naman@Example.com' })
+  })
+
+  it('does not offer the admin a way to delete their own account', async () => {
+    mockApi({ 'GET /api/auth/me': { ...USER, is_admin: true }, ...privacy })
+    renderApp('/profile')
+    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete my account' })).not.toBeInTheDocument()
+  })
+
+  it('lists account activity for the admin', async () => {
+    mockApi({
+      'GET /api/auth/me': { ...USER, is_admin: true },
+      'GET /api/admin/invites': [],
+      'GET /api/admin/users': [],
+      'GET /api/admin/audit': [
+        { at: '2026-10-19T08:32:00Z', action: 'sign_in_refused', label: 'Sign-in refused', actor_email: null, target_email: null, detail: 'not_invited' },
+        { at: '2026-10-19T08:30:00Z', action: 'invite_created', label: 'Invite created', actor_email: 'naman@example.com', target_email: 'friend@example.com', detail: null },
+      ],
+    })
+    renderApp('/admin')
+    expect(await screen.findByText('Invite created')).toBeInTheDocument()
+    expect(screen.getByText(/by naman@example\.com · friend@example\.com/)).toBeInTheDocument()
+    expect(screen.getByText(/· not invited/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show older' })).not.toBeInTheDocument()
   })
 })

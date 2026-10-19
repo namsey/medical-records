@@ -315,6 +315,26 @@ class UserOut(BaseModel):
     email: str
     name: str | None
     is_admin: bool = False
+    needs_consent: bool = False  # has not agreed to the current privacy notice yet
+
+
+class PrivacyInfo(BaseModel):
+    version: str
+    grievance_name: str
+    grievance_email: str
+
+
+class ConsentIn(BaseModel):
+    version: str = Field(max_length=32)
+
+
+class AuditOut(BaseModel):
+    at: datetime
+    action: str
+    label: str
+    actor_email: str | None
+    target_email: str | None
+    detail: str | None
 
 
 class StorageOut(BaseModel):

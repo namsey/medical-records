@@ -3,6 +3,7 @@ import { ApiError, request } from '@/lib/api'
 import { ME_KEY } from '@/lib/queryClient'
 import type {
   AdminUser,
+  AuditEntry,
   CreatedInvite,
   Doctor,
   DoctorInput,
@@ -11,6 +12,7 @@ import type {
   Lab,
   LabInput,
   MedicalRecord,
+  PrivacyInfo,
   RecordFilters,
   RecordInput,
   RecordPage,
@@ -83,6 +85,45 @@ export function useLogoutAll() {
   })
 }
 
+// ------------------------------------------------------------------ privacy and the account
+
+export function usePrivacyInfo() {
+  return useQuery({ queryKey: ['privacy'], queryFn: ({ signal }) => request<PrivacyInfo>('/api/auth/privacy', { signal }), staleTime: Infinity })
+}
+
+export function useGiveConsent() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (version: string) => request<void>('/api/account/consent', { method: 'POST', json: { version } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ME_KEY }),
+  })
+}
+
+/** Permanently deletes the signed-in account and everything in it, then the session is gone. */
+export function useDeleteMyAccount() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (confirmEmail: string) => request<{ ok: boolean }>('/api/account/delete', { method: 'POST', json: { confirm_email: confirmEmail } }),
+    onSuccess: () => {
+      queryClient.clear()
+      queryClient.setQueryData(ME_KEY, null)
+    },
+  })
+}
+
+export function useAuditLog() {
+  return useInfiniteQuery({
+    queryKey: ['admin', 'audit'],
+    queryFn: ({ pageParam, signal }) => {
+      const params = new URLSearchParams({ limit: '50' })
+      if (pageParam) params.set('before', pageParam)
+      return request<AuditEntry[]>(`/api/admin/audit?${params}`, { signal })
+    },
+    initialPageParam: '',
+    getNextPageParam: (last) => (last.length === 50 ? last[last.length - 1]!.at : undefined),
+  })
+}
+
 // ------------------------------------------------------------------ invites and admin
 
 export function useInviteCheck(token: string | undefined) {
@@ -109,7 +150,7 @@ export function useCreateInvite() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (email: string) => request<CreatedInvite>('/api/admin/invites', { method: 'POST', json: { email } }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ADMIN_INVITES_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
   })
 }
 
@@ -117,7 +158,7 @@ export function useRevokeInvite() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => request<Invite>(`/api/admin/invites/${id}/revoke`, { method: 'POST' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ADMIN_INVITES_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
   })
 }
 
@@ -126,7 +167,7 @@ export function useSetUserDisabled() {
   return useMutation({
     mutationFn: ({ id, disabled }: { id: string; disabled: boolean }) =>
       request<void>(`/api/admin/users/${id}/${disabled ? 'disable' : 'enable'}`, { method: 'POST' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ADMIN_USERS_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
   })
 }
 
@@ -135,7 +176,7 @@ export function useSetQuota() {
   return useMutation({
     mutationFn: ({ id, quotaMb }: { id: string; quotaMb: number | null }) =>
       request<void>(`/api/admin/users/${id}/quota`, { method: 'PUT', json: { quota_mb: quotaMb } }),
-    onSuccess: () => Promise.all([queryClient.invalidateQueries({ queryKey: ADMIN_USERS_KEY }), queryClient.invalidateQueries({ queryKey: ['storage'] })]),
+    onSuccess: () => Promise.all([queryClient.invalidateQueries({ queryKey: ['admin'] }), queryClient.invalidateQueries({ queryKey: ['storage'] })]),
   })
 }
 
@@ -144,7 +185,7 @@ export function useDeleteUser() {
   return useMutation({
     mutationFn: ({ id, confirmEmail }: { id: string; confirmEmail: string }) =>
       request<void>(`/api/admin/users/${id}/delete`, { method: 'POST', json: { confirm_email: confirmEmail } }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ADMIN_USERS_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
   })
 }
 

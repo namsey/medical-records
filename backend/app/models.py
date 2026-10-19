@@ -68,6 +68,26 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     disabled_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     quota_bytes: Mapped[int | None] = mapped_column(Integer)  # None: DEFAULT_QUOTA_MB
+    consent_version: Mapped[str | None] = mapped_column(String(32))  # privacy notice version agreed to
+    consented_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class AuditEvent(Base):
+    """Who did what to which account, and when. Never record contents, file names or IP addresses.
+
+    Emails are copied in, so an entry still says who it was about after that account is deleted (kept 1 year).
+    """
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    action: Mapped[str] = mapped_column(String(40))
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    actor_email: Mapped[str | None] = mapped_column(String(320))
+    target_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    target_email: Mapped[str | None] = mapped_column(String(320))
+    detail: Mapped[str | None] = mapped_column(String(100))  # a reason code or a setting, never personal content
 
 
 class Invite(Base):

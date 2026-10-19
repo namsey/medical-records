@@ -3,9 +3,11 @@
 No route here returns another user's records or files: AdminStore only reads accounts, invites and sizes.
 """
 
-from fastapi import APIRouter, Depends, Response, status
+from datetime import datetime
 
-from app.schemas import AdminUserOut, DeleteUserIn, InviteCreated, InviteIn, InviteOut, QuotaIn
+from fastapi import APIRouter, Depends, Query, Response, status
+
+from app.schemas import AdminUserOut, AuditOut, DeleteUserIn, InviteCreated, InviteIn, InviteOut, QuotaIn
 from app.security import admin_dependencies
 from app.services import rate_limit
 from app.services.admin_store import AdminStore, get_admin_store
@@ -28,6 +30,16 @@ def create_invite(payload: InviteIn, store: AdminStore = Depends(get_admin_store
 @router.post("/invites/{invite_id}/revoke", response_model=InviteOut)
 def revoke_invite(invite_id: str, store: AdminStore = Depends(get_admin_store)) -> InviteOut:
     return store.revoke_invite(invite_id)
+
+
+@router.get("/audit", response_model=list[AuditOut])
+def audit_log(
+    before: datetime | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    store: AdminStore = Depends(get_admin_store),
+) -> list[AuditOut]:
+    """Account events, newest first. Pass the oldest `at` you have as `before` for the next page."""
+    return store.audit_log(before, limit)
 
 
 @router.get("/users", response_model=list[AdminUserOut])

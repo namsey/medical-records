@@ -6,7 +6,7 @@ import { TextInput } from '@/components/ui/Field'
 import { CardSkeletons, ErrorMessage } from '@/components/ui/feedback'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
-import { useAdminInvites, useAdminUsers, useCreateInvite, useDeleteUser, useMe, useRevokeInvite, useSetQuota, useSetUserDisabled } from '@/hooks/queries'
+import { useAdminInvites, useAdminUsers, useAuditLog, useCreateInvite, useDeleteUser, useMe, useRevokeInvite, useSetQuota, useSetUserDisabled } from '@/hooks/queries'
 import { errorMessage } from '@/lib/api'
 import { formatDate, formatFileSize, pluralize } from '@/lib/format'
 import type { AdminUser, CreatedInvite, Invite, InviteStatus } from '@/lib/types'
@@ -323,6 +323,51 @@ function UserList() {
   )
 }
 
+function ActivityLog() {
+  const { data, isPending, isError, error, refetch, hasNextPage, fetchNextPage, isFetchingNextPage } = useAuditLog()
+  if (isPending) return <CardSkeletons count={2} />
+  if (isError) return <ErrorMessage message={errorMessage(error)} onRetry={() => void refetch()} />
+  const entries = data.pages.flat()
+  if (entries.length === 0) return <p className="text-sm text-muted">Nothing yet.</p>
+
+  return (
+    <div className="space-y-3">
+      <ul className="card divide-y divide-line">
+        {entries.map((entry, index) => (
+          <li key={`${entry.at}-${index}`} className="px-4 py-3 text-sm">
+            <p className="font-semibold">
+              {entry.label}
+              {entry.detail ? <span className="font-normal text-muted"> · {entry.detail.replaceAll('_', ' ')}</span> : null}
+            </p>
+            <p className="text-muted">
+              {formatDateTime(entry.at)}
+              {entry.actor_email && ` · by ${entry.actor_email}`}
+              {entry.target_email && entry.target_email !== entry.actor_email && ` · ${entry.target_email}`}
+            </p>
+          </li>
+        ))}
+      </ul>
+      {hasNextPage && (
+        <Button variant="secondary" className="w-full" loading={isFetchingNextPage} onClick={() => void fetchNextPage()}>
+          Show older
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/** 19 Oct 2026, 14:02 in the viewer's time zone. */
+function formatDateTime(value: string): string {
+  return new Date(value.endsWith('Z') || value.includes('+') ? value : `${value}Z`).toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
 /** Invites and accounts. Only for the admin: anyone else gets the not-found page (the API says 404 too). */
 export function AdminPage() {
   const { data: me } = useMe()
@@ -354,6 +399,16 @@ export function AdminPage() {
           <p className="page-subtitle">Storage used per account. Nobody, including you, can see another account's records here.</p>
         </div>
         <UserList />
+      </section>
+
+      <section className="space-y-3" aria-labelledby="activity-heading">
+        <div>
+          <h2 id="activity-heading" className="section-heading">
+            Activity
+          </h2>
+          <p className="page-subtitle">Sign-ins, invites and account changes from the last year. Never anyone's records.</p>
+        </div>
+        <ActivityLog />
       </section>
     </div>
   )

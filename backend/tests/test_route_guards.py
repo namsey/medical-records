@@ -15,6 +15,7 @@ PUBLIC_ROUTES = {
     ("GET", "/api/auth/callback"),
     ("POST", "/api/auth/logout"),
     ("GET", "/api/auth/invite/{token}"),  # only says whether an invite link is still usable
+    ("GET", "/api/auth/privacy"),  # the privacy notice version and the grievance contact
 }
 
 

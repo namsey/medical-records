@@ -62,8 +62,9 @@ INVITE_CHECKS = RateLimiter("invite check", limit=20, window_seconds=10 * 60)
 # Per account.
 INVITE_CREATES = RateLimiter("invite creation", limit=30, window_seconds=60 * 60)
 UPLOADED_FILES = RateLimiter("uploads", limit=100, window_seconds=60 * 60)
+DATA_EXPORTS = RateLimiter("data download", limit=5, window_seconds=60 * 60)
 
-ALL_LIMITERS = (SIGN_IN_STARTS, SIGN_IN_CALLBACKS, INVITE_CHECKS, INVITE_CREATES, UPLOADED_FILES)
+ALL_LIMITERS = (SIGN_IN_STARTS, SIGN_IN_CALLBACKS, INVITE_CHECKS, INVITE_CREATES, UPLOADED_FILES, DATA_EXPORTS)
 
 
 def is_limited(limiter: RateLimiter, key: str, cost: int = 1) -> float | None:

@@ -47,11 +47,15 @@ import uvicorn  # noqa: E402
 
 from app.database import SessionLocal  # noqa: E402
 from app.migrations import run_migrations  # noqa: E402
+from app.privacy import PRIVACY_VERSION  # noqa: E402
 from app.services import sessions  # noqa: E402
 
 run_migrations()
 with SessionLocal() as db:
-    token = sessions.create_session(db, sessions.get_or_create_user(db, EMAIL, "E2E"))
+    user = sessions.get_or_create_user(db, EMAIL, "E2E")
+    user.consent_version = PRIVACY_VERSION  # the core flows start after the privacy notice was accepted
+    db.commit()
+    token = sessions.create_session(db, user)
 
 STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 STATE_FILE.write_text(

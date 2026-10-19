@@ -82,7 +82,7 @@ def test_invited_person_signs_in_once(client, anon, monkeypatch):
     invite, token = _invite(client)
     assert _sign_in(anon, monkeypatch, INVITED, token) == "/"
     me = anon.get("/api/auth/me").json()
-    assert me == {"email": INVITED, "name": "Friend", "is_admin": False}
+    assert me == {"email": INVITED, "name": "Friend", "is_admin": False, "needs_consent": True}
     statuses = {i["id"]: i["status"] for i in client.get("/api/admin/invites").json()}
     assert statuses[invite["id"]] == "used"
     with SessionLocal() as db:

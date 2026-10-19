@@ -1,5 +1,5 @@
 import { LogIn, ShieldCheck } from 'lucide-react'
-import { Navigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { AuthShell } from '@/components/layout/AuthShell'
 import { buttonClasses } from '@/components/ui/Button'
 import { LoadingState } from '@/components/ui/feedback'
@@ -40,6 +40,11 @@ export function LoginPage() {
       <p className="mt-6 flex items-center justify-center gap-2 text-center text-sm text-muted">
         <ShieldCheck className="size-4 shrink-0" aria-hidden />
         Only invited Google accounts can open this app.
+      </p>
+      <p className="mt-4 text-center text-sm">
+        <Link to="/privacy" className="font-semibold text-brand-700">
+          Privacy notice
+        </Link>
       </p>
     </AuthShell>
   )

@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.models import User
-from app.schemas import InviteCheck, UserOut
+from app.privacy import PRIVACY_VERSION
+from app.schemas import InviteCheck, PrivacyInfo, UserOut
 from app.security import OAUTH_STATE_COOKIE, SESSION_COOKIE, csrf_protect, get_current_user
-from app.services import invites, rate_limit, sessions
+from app.services import audit, invites, rate_limit, sessions
 from app.services.oauth import OAuthError, build_authorization_url, fetch_user_profile
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,12 @@ def _state_serializer() -> URLSafeTimedSerializer:
 def _client_ip(request: Request) -> str:
     # Behind Caddy on the same machine, uvicorn has already put the real client address here.
     return request.client.host if request.client else "unknown"
+
+
+def _refuse(db: Session, reason: str, error: str | None = None, target: User | None = None) -> RedirectResponse:
+    """Refuse a sign-in. The audit log keeps only the reason (and the account, if the person has one)."""
+    audit.record(db, "sign_in_refused", target=target, detail=reason)
+    return _login_redirect(error or reason)
 
 
 def _login_redirect(error: str) -> RedirectResponse:
@@ -97,24 +104,26 @@ def callback(
     email = str(profile.get("email") or "").strip().lower()
     if not email or profile.get("email_verified") is not True:
         logger.warning("Sign-in rejected: Google did not confirm the email address")
-        return _login_redirect("failed")
+        return _refuse(db, "unverified_email", "failed")
     name = profile.get("name") if isinstance(profile.get("name"), str) else None
 
     existing = sessions.find_user(db, email)
     if sessions.is_admin_email(email) or existing is not None:
         if existing is not None and not sessions.can_use_app(existing):
             logger.warning("Sign-in rejected: the account is disabled")
-            return _login_redirect("disabled")
+            return _refuse(db, "disabled", target=existing)
         user = sessions.get_or_create_user(db, email, name)
     elif invite_token:
         result = invites.redeem(db, str(invite_token), email, name)
         if isinstance(result, str):
             logger.warning("Sign-in rejected: %s", result)
-            return _login_redirect(result)
+            return _refuse(db, result)
         user = result
+        audit.record(db, "invite_used", actor=user, target=user)
     else:
         logger.warning("Sign-in rejected: no account and no invite")
-        return _login_redirect("not_invited")
+        return _refuse(db, "not_invited")
+    audit.record(db, "sign_in", actor=user, target=user)
     token = sessions.create_session(db, user)
 
     response = RedirectResponse("/", status_code=302)
@@ -133,7 +142,23 @@ def callback(
 
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)) -> UserOut:
-    return UserOut(email=user.email, name=user.name, is_admin=sessions.is_admin(user))
+    return UserOut(
+        email=user.email,
+        name=user.name,
+        is_admin=sessions.is_admin(user),
+        needs_consent=user.consent_version != PRIVACY_VERSION,
+    )
+
+
+@router.get("/privacy", response_model=PrivacyInfo)
+def privacy_info() -> PrivacyInfo:
+    """Public: the current privacy notice version and who to contact about privacy."""
+    settings = get_settings()
+    return PrivacyInfo(
+        version=PRIVACY_VERSION,
+        grievance_name=settings.grievance_name.strip() or "The administrator of this app",
+        grievance_email=settings.grievance_email.strip() or settings.admin_email_normalized,
+    )
 
 
 @router.get("/invite/{token}", response_model=InviteCheck)
@@ -156,6 +181,7 @@ def logout_all(user: User = Depends(get_current_user), db: Session = Depends(get
     """Sign out of every device, this one included (for a lost phone or a shared computer)."""
     sessions.delete_user_sessions(db, user.id)
     db.commit()
+    audit.record(db, "signed_out_everywhere", actor=user, target=user)
     response = JSONResponse({"ok": True})
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response

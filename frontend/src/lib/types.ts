@@ -11,6 +11,24 @@ export interface User {
   email: string
   name: string | null
   is_admin: boolean
+  /** Has not agreed to the current privacy notice yet. */
+  needs_consent: boolean
+}
+
+export interface PrivacyInfo {
+  version: string
+  grievance_name: string
+  grievance_email: string
+}
+
+/** One audit log entry: account events only, never record contents. */
+export interface AuditEntry {
+  at: string
+  action: string
+  label: string
+  actor_email: string | null
+  target_email: string | null
+  detail: string | null
 }
 
 export type InviteStatus = 'pending' | 'used' | 'expired' | 'revoked'
