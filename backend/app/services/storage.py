@@ -127,8 +127,8 @@ class FileStore(Protocol):
 
     def delete(self, user_id: str, stored_name: str) -> None: ...
 
-    def iter_files(self) -> Iterator[tuple[Path, str]]:
-        """Every stored file as (absolute path, path relative to the store), for backups."""
+    def iter_files(self, user_id: str) -> Iterator[tuple[Path, str]]:
+        """Every file of the user as (absolute path, path relative to the store), for backups."""
         ...
 
 
@@ -186,9 +186,12 @@ class LocalFileStore:
         if path is not None:
             remove_file(path)
 
-    def iter_files(self) -> Iterator[tuple[Path, str]]:
-        for path in sorted(self.base.rglob("*")):
-            if path.is_file():
+    def iter_files(self, user_id: str) -> Iterator[tuple[Path, str]]:
+        folder = self.base / user_id
+        if not _USER_ID_RE.match(user_id) or not folder.is_dir():
+            return
+        for path in sorted(folder.iterdir()):
+            if path.is_file() and _STORED_NAME_RE.match(path.name):
                 yield path, path.relative_to(self.base).as_posix()
 
 

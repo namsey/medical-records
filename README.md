@@ -185,9 +185,10 @@ alembic upgrade head
 
 In the app open **Home → menu (top right) → Backup and export**:
 
-- **Full backup (ZIP)** → `medical-records-backup-YYYY-MM-DD.zip` containing the SQLite database and every
-  uploaded file. Login sessions are left out.
-- **Export records (JSON)** → structured data (doctors, laboratories, records, medicines, results, tags and
+- **Full backup (ZIP)** → `medical-records-backup-YYYY-MM-DD.zip` containing a copy of the SQLite database and
+  your uploaded files. The copy holds only the signed-in account's data; other accounts and login sessions are
+  removed from it (and the file is compacted, so nothing deleted can be recovered from it).
+- **Export records (JSON)** → your structured data (doctors, laboratories, records, medicines, results, tags and
   attachment metadata) without the files.
 
 Backups contain your private medical data. Store them somewhere safe (they are not encrypted).
