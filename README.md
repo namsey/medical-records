@@ -183,6 +183,10 @@ alembic upgrade head
 
 ## Backup and restore
 
+On a server, nightly encrypted backups of all data go to Oracle Object Storage in Mumbai, with a weekly copy to
+a disk at home and a monthly restore drill: see [DEPLOY.md](DEPLOY.md). The in-app backup below is your own copy
+of your own data.
+
 In the app open **Home → menu (top right) → Backup and export**:
 
 - **Full backup (ZIP)** → `medical-records-backup-YYYY-MM-DD.zip` containing a copy of the SQLite database and
