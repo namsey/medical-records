@@ -34,7 +34,7 @@ os.environ.update(
         "GOOGLE_CLIENT_ID": "e2e-client-id",
         "GOOGLE_CLIENT_SECRET": "e2e-client-secret",
         "GOOGLE_REDIRECT_URI": f"http://127.0.0.1:{PORT}/api/auth/callback",
-        "ALLOWED_EMAIL": EMAIL,
+        "ADMIN_EMAIL": EMAIL,
         "SESSION_SECRET": "e2e-session-secret-e2e-session-secret-1234",
         "DATABASE_URL": f"sqlite:///{DATA_DIR / 'e2e.db'}",
         "FILES_DIR": str(DATA_DIR / "files"),

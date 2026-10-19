@@ -7,7 +7,7 @@ from sqlalchemy import update
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import UserSession, utcnow
+from app.models import User, UserSession, utcnow
 from app.services.oauth import OAuthError
 from tests.conftest import CSRF_HEADERS, make_session_token
 
@@ -111,11 +111,11 @@ def test_callback_email_match_is_case_insensitive(anon, monkeypatch):
     assert response.headers["location"] == "/"
 
 
-def test_callback_rejects_other_google_accounts(anon, monkeypatch):
+def test_callback_rejects_accounts_without_an_invite(anon, monkeypatch):
     _fake_profile(monkeypatch, email="intruder@example.com")
     state = _start_login(anon)
     response = anon.get(f"/api/auth/callback?code=abc&state={state}", follow_redirects=False)
-    assert response.headers["location"] == "/login?error=not_allowed"
+    assert response.headers["location"] == "/login?error=not_invited"
     assert "session=" not in response.headers.get("set-cookie", "").replace("oauth_state", "")
     assert anon.get("/api/auth/me").status_code == 401
 
@@ -124,7 +124,7 @@ def test_callback_rejects_unverified_email(anon, monkeypatch):
     _fake_profile(monkeypatch, email_verified=False)
     state = _start_login(anon)
     response = anon.get(f"/api/auth/callback?code=abc&state={state}", follow_redirects=False)
-    assert response.headers["location"] == "/login?error=not_allowed"
+    assert response.headers["location"] == "/login?error=failed"
 
 
 def test_callback_rejects_wrong_state(anon, monkeypatch):
@@ -174,9 +174,13 @@ def test_expired_session_is_rejected(client):
     assert client.get("/api/records").status_code == 401
 
 
-def test_session_for_a_non_allowed_account_is_rejected():
+def test_session_for_a_disabled_account_is_rejected():
     other = TestClient(app, headers=CSRF_HEADERS)
     other.cookies.set("session", make_session_token("someone-else@example.com"))
+    assert other.get("/api/records").status_code == 200
+    with SessionLocal() as db:
+        db.execute(update(User).where(User.email == "someone-else@example.com").values(disabled_at=utcnow()))
+        db.commit()
     assert other.get("/api/records").status_code == 401
 
 

@@ -27,7 +27,7 @@ def _setup_app():
             "GOOGLE_CLIENT_ID": "test",
             "GOOGLE_CLIENT_SECRET": "test",
             "GOOGLE_REDIRECT_URI": "http://127.0.0.1/api/auth/callback",
-            "ALLOWED_EMAIL": USERS[0],
+            "ADMIN_EMAIL": USERS[0],
             "SESSION_SECRET": "backup-test-secret-backup-test-secret",
             "DATABASE_URL": f"sqlite:///{DATA_DIR / 'medical_records.db'}",
             "FILES_DIR": str(DATA_DIR / "files"),

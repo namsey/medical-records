@@ -131,6 +131,10 @@ class FileStore(Protocol):
         """Every file of the user as (absolute path, path relative to the store), for backups."""
         ...
 
+    def delete_user_files(self, user_id: str) -> None:
+        """Remove every file of a deleted account."""
+        ...
+
 
 class LocalFileStore:
     def __init__(self, base: Path) -> None:
@@ -193,6 +197,12 @@ class LocalFileStore:
         for path in sorted(folder.iterdir()):
             if path.is_file() and _STORED_NAME_RE.match(path.name):
                 yield path, path.relative_to(self.base).as_posix()
+
+
+    def delete_user_files(self, user_id: str) -> None:
+        folder = self.base / user_id
+        if _USER_ID_RE.match(user_id) and folder.is_dir() and folder.resolve().is_relative_to(self.base):
+            shutil.rmtree(folder)
 
 
 def get_file_store() -> LocalFileStore:

@@ -3,7 +3,7 @@
 import re
 from datetime import date, datetime
 from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
@@ -314,3 +314,46 @@ class TimelineItem(BaseModel):
 class UserOut(BaseModel):
     email: str
     name: str | None
+    is_admin: bool = False
+
+
+class InviteCheck(BaseModel):
+    valid: bool
+
+
+InviteStatus = Literal["pending", "used", "expired", "revoked"]
+
+
+class InviteIn(BaseModel):
+    email: str = Field(max_length=320)
+
+
+class InviteOut(ORMModel):
+    id: str
+    email: str
+    status: InviteStatus
+    created_at: datetime
+    expires_at: datetime
+    used_at: datetime | None
+
+
+class InviteCreated(InviteOut):
+    link: str  # shown once: only a hash of its secret is stored
+
+
+class AdminUserOut(BaseModel):
+    """What an admin may see about an account: never its records or files, only counts and sizes."""
+
+    id: str
+    email: str
+    name: str | None
+    is_admin: bool
+    disabled: bool
+    created_at: datetime
+    last_login_at: datetime | None
+    file_count: int
+    storage_bytes: int
+
+
+class DeleteUserIn(BaseModel):
+    confirm_email: str = Field(max_length=320)

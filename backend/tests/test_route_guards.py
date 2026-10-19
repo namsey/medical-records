@@ -14,7 +14,9 @@ PUBLIC_ROUTES = {
     ("GET", "/api/auth/login"),
     ("GET", "/api/auth/callback"),
     ("POST", "/api/auth/logout"),
+    ("GET", "/api/auth/invite/{token}"),  # only says whether an invite link is still usable
 }
+
 
 def _api_routes(routes) -> list[APIRoute]:
     """Every APIRoute, including those inside included routers."""
@@ -45,6 +47,17 @@ def test_every_other_api_route_needs_a_session(anon, method, path):
     """Found from the app itself, so a new route cannot be missed by forgetting to list it."""
     url = re.sub(r"\{[^}]+\}", "x", path)
     assert anon.request(method, url).status_code == 401
+
+
+@pytest.mark.parametrize(("method", "path"), [r for r in API_ROUTES if r[1].startswith("/api/admin/")])
+def test_admin_routes_are_not_found_for_other_users(second_client, method, path):
+    url = re.sub(r"\{[^}]+\}", "x", path)
+    response = second_client.request(method, url, json={"email": "a@example.com", "confirm_email": "x"})
+    assert (response.status_code, response.json()) == (404, {"detail": "Not found"})
+
+
+def test_there_are_admin_routes():
+    assert sum(1 for _, path in API_ROUTES if path.startswith("/api/admin/")) >= 7
 
 
 ROUTERS = Path(__file__).resolve().parents[1] / "app" / "routers"

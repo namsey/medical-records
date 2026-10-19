@@ -13,7 +13,7 @@ os.environ.update(
         "GOOGLE_CLIENT_ID": "test-client-id",
         "GOOGLE_CLIENT_SECRET": "test-client-secret",
         "GOOGLE_REDIRECT_URI": "http://localhost:8000/api/auth/callback",
-        "ALLOWED_EMAIL": "owner@example.com",
+        "ADMIN_EMAIL": "owner@example.com",
         "SESSION_SECRET": "test-secret-test-secret-test-secret-1234",
         "DATABASE_URL": f"sqlite:///{_TEST_ROOT / 'test.db'}",
         "FILES_DIR": str(_TEST_ROOT / "files"),
@@ -76,15 +76,8 @@ SECOND_EMAIL = "second@example.com"
 
 
 @pytest.fixture
-def allow_second_user(monkeypatch) -> None:
-    """Let a second account use the app, through the same single check that ALLOWED_EMAIL goes through."""
-    allowed = {OWNER_EMAIL, SECOND_EMAIL}
-    monkeypatch.setattr(sessions, "is_allowed_email", lambda email: email.strip().lower() in allowed)
-
-
-@pytest.fixture
-def second_client(allow_second_user) -> TestClient:
-    """A client logged in as a second, separate user."""
+def second_client() -> TestClient:
+    """A client logged in as a second, separate user (an ordinary account, as if made from an invite)."""
     test_client = TestClient(app, headers=CSRF_HEADERS)
     test_client.cookies.set("session", make_session_token(SECOND_EMAIL))
     return test_client

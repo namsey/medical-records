@@ -1,6 +1,6 @@
 """record ownership: every record, doctor, laboratory and tag belongs to one user
 
-Existing rows are assigned to the owner account (the ALLOWED_EMAIL user), which is created if it has never
+Existing rows are assigned to the owner account (the ADMIN_EMAIL user, formerly ALLOWED_EMAIL), which is created if it has never
 signed in. Tag names become unique per user instead of across the whole app.
 
 Revision ID: 0002
@@ -32,9 +32,9 @@ def _owner_id(connection) -> str | None:
     has_rows = any(connection.execute(sa.text(f'SELECT 1 FROM {table} LIMIT 1')).first() for table in OWNED_TABLES)
     if not has_rows:
         return None
-    email = get_settings().allowed_email_normalized
+    email = get_settings().admin_email_normalized
     if '@' not in email:
-        raise RuntimeError('ALLOWED_EMAIL must be set to assign existing records to their owner')
+        raise RuntimeError('ADMIN_EMAIL must be set to assign existing records to their owner')
     row = connection.execute(sa.text('SELECT id FROM users WHERE lower(email) = :email'), {'email': email}).first()
     if row:
         return row[0]

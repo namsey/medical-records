@@ -23,7 +23,7 @@ def code_challenge(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
-def build_authorization_url(state: str, verifier: str) -> str:
+def build_authorization_url(state: str, verifier: str, login_hint: str | None = None) -> str:
     settings = get_settings()
     params = {
         "client_id": settings.google_client_id,
@@ -34,8 +34,9 @@ def build_authorization_url(state: str, verifier: str) -> str:
         "code_challenge": code_challenge(verifier),
         "code_challenge_method": "S256",
         "prompt": "select_account",
-        "login_hint": settings.allowed_email,
     }
+    if login_hint:
+        params["login_hint"] = login_hint
     return f"{AUTH_URL}?{urlencode(params)}"
 
 

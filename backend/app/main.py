@@ -12,7 +12,7 @@ from app.config import FRONTEND_DIST, get_settings
 from app.database import SessionLocal
 from app.middleware import MaxBodySizeMiddleware, SecurityHeadersMiddleware
 from app.migrations import run_migrations
-from app.routers import auth, backup, directories, documents, overview, records
+from app.routers import admin, auth, backup, directories, documents, overview, records
 from app.services import sessions, storage
 
 logger = logging.getLogger("app")
@@ -68,7 +68,7 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    for module in (auth, records, directories, documents, overview, backup):
+    for module in (auth, records, directories, documents, overview, backup, admin):
         app.include_router(module.router)
 
     _mount_frontend(app)

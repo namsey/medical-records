@@ -2,8 +2,9 @@
 
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -25,7 +26,8 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = ""
-    allowed_email: str = ""
+    # The bootstrap admin. ALLOWED_EMAIL is the setting's old name and still works.
+    admin_email: str = Field(default="", validation_alias=AliasChoices("admin_email", "allowed_email"))
     session_secret: str = ""
     database_url: str = "sqlite:///data/medical_records.db"
     files_dir: str = "data/files"
@@ -34,8 +36,14 @@ class Settings(BaseSettings):
     session_max_age_days: int = Field(default=14, ge=1, le=365)
 
     @property
-    def allowed_email_normalized(self) -> str:
-        return self.allowed_email.strip().lower()
+    def admin_email_normalized(self) -> str:
+        return self.admin_email.strip().lower()
+
+    @property
+    def public_origin(self) -> str:
+        """The app's public address (scheme and host), taken from the OAuth redirect URI."""
+        parts = urlsplit(self.google_redirect_uri.strip())
+        return f"{parts.scheme}://{parts.netloc}"
 
     @property
     def max_upload_bytes(self) -> int:
@@ -85,15 +93,15 @@ class Settings(BaseSettings):
             "GOOGLE_CLIENT_ID": self.google_client_id,
             "GOOGLE_CLIENT_SECRET": self.google_client_secret,
             "GOOGLE_REDIRECT_URI": self.google_redirect_uri,
-            "ALLOWED_EMAIL": self.allowed_email,
+            "ADMIN_EMAIL": self.admin_email,
         }
         for name, value in required.items():
             if not value.strip():
                 problems.append(f"{name} is not set")
         if len(self.session_secret) < MIN_SESSION_SECRET_LENGTH:
             problems.append(f"SESSION_SECRET must be set and at least {MIN_SESSION_SECRET_LENGTH} characters long")
-        if "@" not in self.allowed_email:
-            problems.append("ALLOWED_EMAIL must be an email address")
+        if "@" not in self.admin_email:
+            problems.append("ADMIN_EMAIL must be an email address")
         return problems
 
 
