@@ -9,7 +9,7 @@ import hmac
 import secrets
 from datetime import timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -41,7 +41,8 @@ def can_use_app(user: User) -> bool:
 
 
 def find_user(db: Session, email: str) -> User | None:
-    return db.scalar(select(User).where(User.email == email.strip().lower()))
+    """The account for an email, ignoring case (rows from older versions may not be stored in lower case)."""
+    return db.scalar(select(User).where(func.lower(User.email) == email.strip().lower()))
 
 
 def get_or_create_user(db: Session, email: str, name: str | None) -> User:

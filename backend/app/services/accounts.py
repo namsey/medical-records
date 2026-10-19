@@ -116,7 +116,7 @@ class Account:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="The admin account cannot be deleted, so the app always has an admin.",
             )
-        if invites.normalize_email(confirm_email) != self.user.email:
+        if invites.normalize_email(confirm_email) != self.user.email.lower():
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Type your email to confirm")
         email = self.user.email
         delete_account(self.db, self.user, self.files)

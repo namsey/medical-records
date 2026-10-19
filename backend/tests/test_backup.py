@@ -10,6 +10,7 @@ from starlette.datastructures import UploadFile
 from app.database import SessionLocal
 from app.models import User
 from app.schemas import RecordIn
+from app.services import audit
 from app.services.record_store import SqlRecordStore
 from tests.conftest import PDF_BYTES, PNG_BYTES
 
@@ -128,6 +129,11 @@ def _seed_other_user() -> None:
 def test_backup_holds_only_the_signed_in_users_data(client, make_record, tmp_path):
     _seed(client, make_record)
     _seed_other_user()
+    # Server-wide metadata about other people: a pending invite, and audit entries naming another account.
+    assert client.post("/api/admin/invites", json={"email": "pending@example.com"}).status_code == 201
+    with SessionLocal() as db:
+        other = db.query(User).filter_by(email="other@example.com").one()
+        audit.record(db, "account_disabled", target=other)
 
     archive = zipfile.ZipFile(io.BytesIO(client.get("/api/backup").content))
     files = [n for n in archive.namelist() if n.startswith("files/")]
@@ -137,6 +143,7 @@ def test_backup_holds_only_the_signed_in_users_data(client, make_record, tmp_pat
     raw = archive.read("database/medical_records.db")
     assert b"OtherSecret" not in raw  # not even in free pages
     assert b"other@example.com" not in raw
+    assert b"pending@example.com" not in raw
     database = tmp_path / "restored.db"
     database.write_bytes(raw)
     connection = sqlite3.connect(database)
@@ -146,6 +153,9 @@ def test_backup_holds_only_the_signed_in_users_data(client, make_record, tmp_pat
             assert connection.execute(f"select count(*) from {table}").fetchone()[0] == expected, table
         assert connection.execute("select email from users").fetchone()[0] == "owner@example.com"
         assert connection.execute("pragma foreign_key_check").fetchall() == []
+        # Only the account's own tables keep rows: no sessions, invites or audit log.
+        for table in ("sessions", "invites", "audit_events"):
+            assert connection.execute(f"select count(*) from {table}").fetchone()[0] == 0, table
     finally:
         connection.close()
 

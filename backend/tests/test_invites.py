@@ -157,3 +157,15 @@ def test_the_old_setting_name_still_works(monkeypatch):
     monkeypatch.delenv("ADMIN_EMAIL", raising=False)
     monkeypatch.setenv("ALLOWED_EMAIL", "legacy@example.com")
     assert Settings().admin_email_normalized == "legacy@example.com"
+
+
+def test_an_older_mixed_case_account_is_found_at_sign_in(anon, monkeypatch):
+    """Older versions may have stored an email with capitals: sign-in must reach that account, not make a new one."""
+    with SessionLocal() as db:
+        legacy = User(email="Owner@Example.com", role="admin")
+        db.add(legacy)
+        db.commit()
+        legacy_id = legacy.id
+    assert _sign_in(anon, monkeypatch, "owner@example.com") == "/"
+    with SessionLocal() as db:
+        assert [u.id for u in db.query(User).all()] == [legacy_id]

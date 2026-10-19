@@ -10,7 +10,7 @@ from datetime import timedelta
 from typing import Literal
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -48,7 +48,7 @@ def create_invite(db: Session, email: str, created_by: User) -> tuple[Invite, st
     email = normalize_email(email)
     if not EMAIL_RE.match(email) or len(email) > 320:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Enter a valid email address")
-    if db.scalar(select(User.id).where(User.email == email)) is not None:
+    if db.scalar(select(User.id).where(func.lower(User.email) == email)) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This email already has an account")
     now = utcnow()
     db.execute(

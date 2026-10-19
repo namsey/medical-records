@@ -114,7 +114,7 @@ class AdminStore:
     def delete_user(self, user_id: str, confirm_email: str) -> None:
         """Delete the account and everything in it: records, doctors, laboratories, tags, files and sessions."""
         user = self._changeable_user(user_id)
-        if invites.normalize_email(confirm_email) != user.email:
+        if invites.normalize_email(confirm_email) != user.email.lower():
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Type the account's email to confirm"
             )

@@ -27,8 +27,23 @@ def export_filename(today: date | None = None) -> str:
     return f"medical-records-export-{(today or date.today()).isoformat()}.json"
 
 
-# Deleting the records first cascades to their documents, medicines, lab results and tag links, and leaves no
-# record pointing at a doctor or laboratory that is about to go.
+# The only tables the per-user copy keeps rows of. Every other table (login sessions, invites, the audit log and
+# any table added later) is emptied, so nothing about other accounts or the server leaves with it.
+KEPT_TABLES = {
+    "alembic_version",
+    "users",
+    "medical_records",
+    "doctors",
+    "labs",
+    "tags",
+    "record_tags",
+    "prescription_medicines",
+    "lab_results",
+    "documents",
+}
+
+# Within the kept tables, other users' rows go. Deleting the records first cascades to their documents, medicines,
+# lab results and tag links, and leaves no record pointing at a doctor or laboratory that is about to go.
 OTHER_USERS_ROWS = (
     "DELETE FROM medical_records WHERE user_id != :user",
     "DELETE FROM doctors WHERE user_id != :user",
@@ -45,8 +60,10 @@ def _snapshot_database(destination: Path, user_id: str) -> None:
     try:
         source.backup(target)
         target.execute("PRAGMA foreign_keys=ON")
-        # Login sessions are not part of the medical data and must not leave the server.
-        target.execute("DELETE FROM sessions")
+        tables = [row[0] for row in target.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        for table in tables:
+            if table not in KEPT_TABLES and not table.startswith("sqlite_"):
+                target.execute(f'DELETE FROM "{table}"')
         for statement in OTHER_USERS_ROWS:
             target.execute(statement, {"user": user_id})
         target.commit()
