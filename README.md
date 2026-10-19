@@ -244,7 +244,14 @@ SQLite must not live on a network file system (NFS).
   user. Someone else's item answers exactly like one that does not exist (404), in lists, search, the timeline,
   file downloads, backup and export alike. Tests sign in two users and check this both ways round.
 - Every `/api` route except sign-in and `/api/health` requires a valid session. State-changing requests also need
-  a custom header, which blocks cross-site request forgery. No CORS is enabled.
+  a custom header and are refused when their `Origin` is another site, which blocks cross-site request forgery.
+  No CORS is enabled. Tests check this for every route the app has.
+- On a server, `GOOGLE_REDIRECT_URI` must be `https://` (the app will not start otherwise), so session cookies are
+  always `Secure` and HSTS is on. Plain `http://` only works for `localhost`.
+- Rate limits (in memory, cleared on restart): sign-in and invite-link checks 20 per 10 minutes per IP address,
+  invite creation 30 per hour per admin, uploads 100 files per hour per account. Run the app behind a reverse proxy
+  on the same machine (for example Caddy), so the app sees each visitor's real IP address.
+- **Profile → Sign out of all devices** ends every session of your account, for a lost phone or a shared computer.
 - Uploaded files live outside any public folder and are only served through authenticated endpoints. Stored names are
   random UUIDs, paths are checked to stay inside the user's files folder, and the file type is verified from the file's
   actual contents (not its name or the browser's claim). Size is limited by `MAX_UPLOAD_SIZE_MB`.

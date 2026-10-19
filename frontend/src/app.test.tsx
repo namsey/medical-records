@@ -550,16 +550,34 @@ describe('profile', () => {
     expect(screen.getByRole('link', { name: /doctors/i })).toHaveAttribute('href', '/doctors')
     expect(screen.getByRole('link', { name: /full backup/i })).toHaveAttribute('href', '/api/backup')
     expect(screen.getByRole('link', { name: /export records/i })).toHaveAttribute('href', '/api/export/json')
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
     expect(screen.getByText(/naman@example\.com/)).toBeInTheDocument()
   })
 
   it('signs out', async () => {
     const calls = mockApi({ ...authed, 'POST /api/auth/logout': { ok: true } })
     renderApp('/profile')
-    await userEvent.click(await screen.findByRole('button', { name: /sign out/i }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }))
     expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument()
     expect(calls.some((c) => c.method === 'POST' && c.path === '/api/auth/logout')).toBe(true)
+  })
+
+  it('signs out of all devices after confirming', async () => {
+    const calls = mockApi({ ...authed, 'POST /api/auth/logout-all': { ok: true } })
+    renderApp('/profile')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /sign out of all devices/i }))
+    const dialog = await screen.findByRole('dialog', { name: 'Sign out of all devices?' })
+    expect(calls.some((c) => c.path === '/api/auth/logout-all')).toBe(false)
+    await user.click(within(dialog).getByRole('button', { name: 'Sign out everywhere' }))
+    expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument()
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/api/auth/logout-all')).toBe(true)
+  })
+
+  it('explains a sign-in refused for too many attempts', async () => {
+    mockApi({ 'GET /api/auth/me': () => ({ status: 401, json: {} }) })
+    renderApp('/login?error=rate_limited')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/too many sign-in attempts/i)
   })
 
   it('redirects the old /more address to Profile', async () => {

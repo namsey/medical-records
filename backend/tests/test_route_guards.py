@@ -60,6 +60,35 @@ def test_there_are_admin_routes():
     assert sum(1 for _, path in API_ROUTES if path.startswith("/api/admin/")) >= 7
 
 
+STATE_CHANGING = [r for r in API_ROUTES if r[0] in {"POST", "PUT", "DELETE", "PATCH"}]
+
+
+@pytest.mark.parametrize(("method", "path"), STATE_CHANGING)
+def test_every_state_changing_route_needs_the_csrf_header(method, path):
+    """Found from the app itself. Signed in as the admin, so only the missing header can be the reason."""
+    from fastapi.testclient import TestClient
+
+    from tests.conftest import make_session_token
+
+    no_header = TestClient(app)
+    no_header.cookies.set("session", make_session_token())
+    response = no_header.request(method, re.sub(r"\{[^}]+\}", "x", path))
+    assert (response.status_code, response.json()) == (403, {"detail": "Missing request header"})
+
+
+@pytest.mark.parametrize(("method", "path"), STATE_CHANGING)
+def test_every_state_changing_route_refuses_another_site(client, method, path):
+    url = re.sub(r"\{[^}]+\}", "x", path)
+    response = client.request(method, url, headers={"Origin": "https://evil.example"})
+    assert (response.status_code, response.json()) == (403, {"detail": "Request from another site"})
+
+
+def test_requests_from_the_app_itself_are_allowed(client):
+    for origin in ("http://testserver", "http://localhost:8000"):  # the request's host, the public address
+        response = client.post("/api/doctors", json={"name": "Dr. Same Site"}, headers={"Origin": origin})
+        assert response.status_code == 201, origin
+
+
 ROUTERS = Path(__file__).resolve().parents[1] / "app" / "routers"
 # Data access goes through RecordStore, which always filters by the signed-in user.
 DIRECT_QUERY = re.compile(r"\bsqlalchemy\b|\bselect\(|\bdb\.(get|query|execute|scalar|scalars|add|delete)\(|\bSession\b")

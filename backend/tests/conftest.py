@@ -28,7 +28,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.database import Base, SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
-from app.services import sessions  # noqa: E402
+from app.services import rate_limit, sessions  # noqa: E402
 
 CSRF_HEADERS = {"X-Requested-With": "XMLHttpRequest"}
 
@@ -49,6 +49,8 @@ def _lifespan() -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def _clean_state() -> Iterator[None]:
     yield
+    for limiter in rate_limit.ALL_LIMITERS:
+        limiter.reset()
     with SessionLocal() as db:
         for table in reversed(Base.metadata.sorted_tables):
             db.execute(table.delete())

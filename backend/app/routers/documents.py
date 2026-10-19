@@ -7,6 +7,7 @@ from starlette.datastructures import UploadFile
 from app.models import Document
 from app.schemas import DocumentOut
 from app.security import private_dependencies
+from app.services import rate_limit
 from app.services.record_store import RecordStore, get_record_store
 
 router = APIRouter(prefix="/api", tags=["documents"], dependencies=private_dependencies)
@@ -46,6 +47,9 @@ async def upload_documents(
         uploads = [value for _, value in form.multi_items() if isinstance(value, UploadFile)]
         if not uploads:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No file was uploaded")
+        rate_limit.enforce(
+            rate_limit.UPLOADED_FILES, store.user_id, "Too many files uploaded in the last hour.", cost=len(uploads)
+        )
         saved = await store.add_documents(record, uploads)
     return [DocumentOut.model_validate(document) for document in saved]
 

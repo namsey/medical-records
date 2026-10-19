@@ -10,6 +10,7 @@ const MESSAGES: Record<string, string> = {
   invite_invalid: 'This invite link has expired, was already used or was revoked. Ask for a new one.',
   invite_wrong_account: 'This invite is for a different Google account. Sign in with the account the invite was sent to.',
   disabled: 'This account has been disabled.',
+  rate_limited: 'Too many sign-in attempts. Wait a few minutes and try again.',
   denied: 'Sign-in was cancelled.',
   failed: 'Sign-in did not work. Please try again.',
 }

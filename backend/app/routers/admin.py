@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Response, status
 
 from app.schemas import AdminUserOut, DeleteUserIn, InviteCreated, InviteIn, InviteOut
 from app.security import admin_dependencies
+from app.services import rate_limit
 from app.services.admin_store import AdminStore, get_admin_store
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=admin_dependencies)
@@ -20,6 +21,7 @@ def list_invites(store: AdminStore = Depends(get_admin_store)) -> list[InviteOut
 @router.post("/invites", response_model=InviteCreated, status_code=status.HTTP_201_CREATED)
 def create_invite(payload: InviteIn, store: AdminStore = Depends(get_admin_store)) -> InviteCreated:
     """The response holds the invite link. It is shown once: copy it and send it yourself."""
+    rate_limit.enforce(rate_limit.INVITE_CREATES, store.admin.id, "Too many invites in the last hour.")
     return store.create_invite(payload.email)
 
 

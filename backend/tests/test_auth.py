@@ -222,3 +222,47 @@ def test_unknown_api_path_is_404_json(client):
     response = client.get("/api/nope")
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("application/json")
+
+
+def test_sign_out_of_all_devices_ends_every_session_of_that_user_only(client, second_client):
+    other_device = TestClient(app, headers=CSRF_HEADERS)
+    other_device.cookies.set("session", make_session_token())
+    assert other_device.get("/api/records").status_code == 200
+
+    response = client.post("/api/auth/logout-all")
+    assert response.status_code == 200
+    assert 'session=""' in response.headers["set-cookie"] or "session=;" in response.headers["set-cookie"]
+    assert other_device.get("/api/records").status_code == 401
+    client.cookies.clear()
+    assert client.get("/api/auth/me").status_code == 401
+    assert second_client.get("/api/records").status_code == 200
+
+
+def test_disabled_account_open_session_cannot_read_or_upload(client, second_client):
+    record = second_client.post("/api/records", json={"record_type": "doctor_visit", "record_date": "2026-01-01"}).json()
+    with SessionLocal() as db:
+        db.execute(update(User).where(User.email == "second@example.com").values(disabled_at=utcnow()))
+        db.commit()
+    assert second_client.get("/api/records").status_code == 401
+    upload = second_client.post(f"/api/records/{record['id']}/documents", files={"files": ("a.pdf", b"%PDF-1.4")})
+    assert upload.status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("uri", "ok"),
+    [
+        ("https://records.example.in/api/auth/callback", True),
+        ("http://localhost:8000/api/auth/callback", True),
+        ("http://127.0.0.1:8765/api/auth/callback", True),
+        ("http://records.example.in/api/auth/callback", False),
+        ("http://10.0.0.5/api/auth/callback", False),
+        ("ftp://records.example.in/cb", False),
+    ],
+)
+def test_server_must_use_https_so_cookies_are_secure(monkeypatch, uri, ok):
+    from app.config import Settings
+
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", uri)
+    problems = Settings().configuration_problems()
+    assert (not any("https://" in problem for problem in problems)) is ok
+    assert Settings().cookie_secure is uri.startswith("https://")

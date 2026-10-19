@@ -1,8 +1,11 @@
-import { CalendarClock, ChevronRight, Database, FileJson, FlaskConical, LogOut, Stethoscope, UsersRound, type LucideIcon } from 'lucide-react'
+import { CalendarClock, ChevronRight, Database, FileJson, FlaskConical, LogOut, MonitorSmartphone, Stethoscope, UsersRound, type LucideIcon } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
-import { useLogout, useMe } from '@/hooks/queries'
+import { ConfirmDialog } from '@/components/ui/Modal'
+import { useLogout, useLogoutAll, useMe } from '@/hooks/queries'
+import { errorMessage } from '@/lib/api'
 
 function MenuLink({ to, icon: Icon, title, hint }: { to: string; icon: LucideIcon; title: string; hint: string }) {
   return (
@@ -36,6 +39,8 @@ function DownloadLink({ href, icon: Icon, title, hint }: { href: string; icon: L
 export function ProfilePage() {
   const { data: user } = useMe()
   const logout = useLogout()
+  const logoutAll = useLogoutAll()
+  const [confirmingLogoutAll, setConfirmingLogoutAll] = useState(false)
   const navigate = useNavigate()
 
   return (
@@ -70,7 +75,22 @@ export function ProfilePage() {
           <LogOut className="size-5" aria-hidden />
           Sign out
         </Button>
+        <Button variant="ghost" className="w-full" onClick={() => setConfirmingLogoutAll(true)}>
+          <MonitorSmartphone className="size-5" aria-hidden />
+          Sign out of all devices
+        </Button>
       </section>
+
+      <ConfirmDialog
+        open={confirmingLogoutAll}
+        title="Sign out of all devices?"
+        message="Also signs you out on this device. Use this if you lost a phone or signed in on someone else's computer."
+        confirmLabel="Sign out everywhere"
+        loading={logoutAll.isPending}
+        error={logoutAll.isError ? errorMessage(logoutAll.error) : null}
+        onCancel={() => setConfirmingLogoutAll(false)}
+        onConfirm={() => logoutAll.mutate(undefined, { onSuccess: () => navigate('/login', { replace: true }) })}
+      />
     </div>
   )
 }

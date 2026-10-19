@@ -13,6 +13,7 @@ PROJECT_ROOT = BACKEND_ROOT.parent
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 
 MIN_SESSION_SECRET_LENGTH = 32
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 class Settings(BaseSettings):
@@ -102,6 +103,14 @@ class Settings(BaseSettings):
             problems.append(f"SESSION_SECRET must be set and at least {MIN_SESSION_SECRET_LENGTH} characters long")
         if "@" not in self.admin_email:
             problems.append("ADMIN_EMAIL must be an email address")
+        redirect = urlsplit(self.google_redirect_uri.strip())
+        if self.google_redirect_uri.strip() and not (
+            redirect.scheme == "https" or (redirect.scheme == "http" and redirect.hostname in LOCAL_HOSTS)
+        ):
+            problems.append(
+                "GOOGLE_REDIRECT_URI must use https:// (plain http:// only works for localhost), "
+                "so session cookies are always Secure on a server"
+            )
         return problems
 
 

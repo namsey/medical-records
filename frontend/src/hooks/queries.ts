@@ -70,6 +70,18 @@ export function useLogout() {
   })
 }
 
+/** Ends every session of this account, on every device, including this one. */
+export function useLogoutAll() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => request<{ ok: boolean }>('/api/auth/logout-all', { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.clear()
+      queryClient.setQueryData(ME_KEY, null)
+    },
+  })
+}
+
 // ------------------------------------------------------------------ invites and admin
 
 export function useInviteCheck(token: string | undefined) {

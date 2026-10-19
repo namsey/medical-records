@@ -14,7 +14,7 @@ from app.database import get_db
 from app.models import User
 from app.schemas import InviteCheck, UserOut
 from app.security import OAUTH_STATE_COOKIE, SESSION_COOKIE, csrf_protect, get_current_user
-from app.services import invites, sessions
+from app.services import invites, rate_limit, sessions
 from app.services.oauth import OAuthError, build_authorization_url, fetch_user_profile
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,11 @@ def _state_serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(get_settings().session_secret, salt="oauth-state")
 
 
+def _client_ip(request: Request) -> str:
+    # Behind Caddy on the same machine, uvicorn has already put the real client address here.
+    return request.client.host if request.client else "unknown"
+
+
 def _login_redirect(error: str) -> RedirectResponse:
     response = RedirectResponse(f"/login?error={error}", status_code=302)
     response.delete_cookie(OAUTH_STATE_COOKIE, path=AUTH_COOKIE_PATH)
@@ -35,8 +40,12 @@ def _login_redirect(error: str) -> RedirectResponse:
 
 
 @router.get("/login", include_in_schema=False)
-def login(invite: str | None = Query(default=None, max_length=invites.MAX_TOKEN_LENGTH)) -> RedirectResponse:
+def login(
+    request: Request, invite: str | None = Query(default=None, max_length=invites.MAX_TOKEN_LENGTH)
+) -> RedirectResponse:
     """Start the Google OAuth flow. An invite link's secret travels in the signed state cookie."""
+    if rate_limit.is_limited(rate_limit.SIGN_IN_STARTS, _client_ip(request)) is not None:
+        return _login_redirect("rate_limited")
     settings = get_settings()
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
@@ -63,6 +72,8 @@ def callback(
 ) -> RedirectResponse:
     """Google redirects here after sign-in."""
     settings = get_settings()
+    if rate_limit.is_limited(rate_limit.SIGN_IN_CALLBACKS, _client_ip(request)) is not None:
+        return _login_redirect("rate_limited")
     if error:
         return _login_redirect("denied")
     if not code or not state:
@@ -126,14 +137,25 @@ def me(user: User = Depends(get_current_user)) -> UserOut:
 
 
 @router.get("/invite/{token}", response_model=InviteCheck)
-def check_invite(token: str, db: Session = Depends(get_db)) -> InviteCheck:
+def check_invite(token: str, request: Request, db: Session = Depends(get_db)) -> InviteCheck:
     """Whether an invite link can still be used. Says nothing else (not even the email it is for)."""
+    rate_limit.enforce(rate_limit.INVITE_CHECKS, _client_ip(request), "Too many invite checks.")
     return InviteCheck(valid=invites.is_usable(db, token))
 
 
 @router.post("/logout", dependencies=[Depends(csrf_protect)])
 def logout(request: Request, db: Session = Depends(get_db)) -> JSONResponse:
     sessions.delete_session(db, request.cookies.get(SESSION_COOKIE))
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
+
+
+@router.post("/logout-all", dependencies=[Depends(csrf_protect)])
+def logout_all(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> JSONResponse:
+    """Sign out of every device, this one included (for a lost phone or a shared computer)."""
+    sessions.delete_user_sessions(db, user.id)
+    db.commit()
     response = JSONResponse({"ok": True})
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response
