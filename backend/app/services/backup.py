@@ -1,12 +1,19 @@
 """Backup (ZIP of database + uploaded files) and structured JSON export of one user's data."""
 
 import json
+import logging
+import os
+import shutil
 import sqlite3
 import tempfile
+import threading
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -16,7 +23,46 @@ from app.schemas import DoctorOut, LabOut, RecordOut
 from app.services.records import FULL_LOAD
 from app.services.storage import get_file_store
 
+logger = logging.getLogger(__name__)
+
 APP_VERSION = "1.0"
+
+# Building an archive reads and compresses every file of an account: at most two at a time, server-wide.
+ARCHIVE_SLOTS = threading.BoundedSemaphore(2)
+ARCHIVE_WAIT_SECONDS = 5
+
+
+@contextmanager
+def archive_slot() -> Iterator[None]:
+    """Hold one of the archive-building slots, or answer 503 if none frees up within a few seconds."""
+    if not ARCHIVE_SLOTS.acquire(timeout=ARCHIVE_WAIT_SECONDS):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Busy, try again in a minute")
+    try:
+        yield
+    finally:
+        ARCHIVE_SLOTS.release()
+
+
+def scratch_dir() -> Path:
+    """Temporary archives and database copies: on the data disk next to the database, never the boot disk."""
+    folder = get_settings().sqlite_path.parent / "tmp"
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return folder
+
+
+def prepare_scratch_dir() -> None:
+    """At startup: create the scratch folder (owner only) and remove anything an earlier run left in it."""
+    folder = scratch_dir()
+    os.chmod(folder, 0o700)
+    removed = 0
+    for item in folder.iterdir():
+        if item.is_dir() and not item.is_symlink():
+            shutil.rmtree(item, ignore_errors=True)
+        else:
+            item.unlink(missing_ok=True)
+        removed += 1
+    if removed:
+        logger.info("Removed %d leftover temporary files", removed)
 
 
 def backup_filename(today: date | None = None) -> str:
@@ -76,11 +122,17 @@ def _snapshot_database(destination: Path, user_id: str) -> None:
 
 def create_backup_zip(user_id: str) -> Path:
     """Build the user's backup archive in a temporary file and return its path (caller deletes it)."""
-    handle = tempfile.NamedTemporaryFile(prefix="medical-backup-", suffix=".zip", delete=False)
+    with archive_slot():
+        return _build_backup_zip(user_id)
+
+
+def _build_backup_zip(user_id: str) -> Path:
+    handle = tempfile.NamedTemporaryFile(prefix="medical-backup-", suffix=".zip", delete=False, dir=scratch_dir())
     handle.close()
     archive_path = Path(handle.name)
     try:
-        with tempfile.TemporaryDirectory(prefix="medical-backup-db-") as workdir:
+        # The copy briefly holds every account's data before the others are removed: keep it on the data disk.
+        with tempfile.TemporaryDirectory(prefix="medical-backup-db-", dir=scratch_dir()) as workdir:
             snapshot = Path(workdir) / "medical_records.db"
             _snapshot_database(snapshot, user_id)
             file_count = 0

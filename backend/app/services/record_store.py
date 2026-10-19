@@ -17,7 +17,7 @@ from app.database import get_db
 from app.models import Doctor, Document, Lab, MedicalRecord, Tag, User, record_tags
 from app.schemas import RecordIn
 from app.security import get_current_user
-from app.services import backup, storage
+from app.services import audit, backup, storage
 from app.services import records as record_service
 from app.services.search import RecordFilters, search_records
 from app.services.storage import FileStore, get_file_store
@@ -195,10 +195,18 @@ class SqlRecordStore:
 
     def backup_zip(self) -> Path:
         """ZIP of a database copy holding only this user's data, plus their files (caller deletes it)."""
-        return backup.create_backup_zip(self.user_id)
+        archive = backup.create_backup_zip(self.user_id)
+        self._audit_download("backup")
+        return archive
 
     def export_json(self) -> str:
-        return backup.build_json_export(self.db, self.user_id)
+        content = backup.build_json_export(self.db, self.user_id)
+        self._audit_download("json")
+        return content
+
+    def _audit_download(self, kind: str) -> None:
+        user = self.db.get(User, self.user_id)
+        audit.record(self.db, "data_downloaded", actor=user, target=user, detail=kind)
 
     # ------------------------------------------------------------ doctors and laboratories
 
