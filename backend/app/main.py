@@ -12,7 +12,7 @@ from app.config import FRONTEND_DIST, get_settings
 from app.database import SessionLocal
 from app.middleware import MaxBodySizeMiddleware, SecurityHeadersMiddleware
 from app.migrations import run_migrations
-from app.routers import account, admin, auth, backup, directories, documents, overview, records
+from app.routers import account, admin, auth, backup, directories, documents, health, overview, records
 from app.services import audit, sessions, storage
 
 logger = logging.getLogger("app")
@@ -65,11 +65,7 @@ def create_app() -> FastAPI:
         logger.error("Unhandled %s on %s %s", type(exc).__name__, request.method, request.url.path)
         return JSONResponse({"detail": "Something went wrong on the server."}, status_code=500)
 
-    @app.get("/api/health", include_in_schema=False)
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
-
-    for module in (auth, account, records, directories, documents, overview, backup, admin):
+    for module in (health, auth, account, records, directories, documents, overview, backup, admin):
         app.include_router(module.router)
 
     _mount_frontend(app)

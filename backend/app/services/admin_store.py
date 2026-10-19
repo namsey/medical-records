@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Document, Invite, MedicalRecord, User, utcnow
-from app.schemas import AdminUserOut, AuditOut, InviteCreated, InviteOut
+from app.config import get_settings
+from app.schemas import AdminUserOut, AuditOut, DiskOut, InviteCreated, InviteOut, SystemOut
 from app.security import require_admin
-from app.services import accounts, audit, invites, sessions
+from app.services import accounts, audit, invites, sessions, system_status
 from app.services.storage import FileStore, get_file_store, quota_bytes
 
 
@@ -136,6 +137,20 @@ class AdminStore:
             )
             for event in audit.recent(self.db, before=before, limit=limit)
         ]
+
+
+    # ------------------------------------------------------------ server
+
+    def system(self) -> SystemOut:
+        backup = system_status.backup_state()
+        return SystemOut(
+            disks=[DiskOut(name=disk.name, percent_used=disk.percent_used) for disk in system_status.disks()],
+            disk_alert_percent=get_settings().disk_alert_percent,
+            backup_state=backup.state,
+            last_backup_at=backup.last_success,
+            last_backup_failure_at=backup.last_failure,
+            started_at=system_status.STARTED_AT,
+        )
 
 
 def get_admin_store(admin: User = Depends(require_admin), db: Session = Depends(get_db)) -> AdminStore:

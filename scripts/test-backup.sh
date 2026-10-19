@@ -78,8 +78,14 @@ sed -i "s|^RESTIC_REPOSITORY=.*|RESTIC_REPOSITORY=$WORK/no-such-repo|" "$BACKUP_
 if "$SCRIPTS/backup.sh" >"$WORK/backup-3.log" 2>&1; then fail "a backup to a missing repository succeeded"; fi
 [[ "$(cat "$STATE/last-success")" == "$good_success" ]] || fail "last-success changed after a failure"
 [[ ! -e "$DATA/../.backup-staging" ]] || fail "the staging copy was left behind after a failure"
+[[ -s "$STATE/last-failure" && "$(stat -c %a "$STATE/last-failure")" == "644" ]] || fail "the failure was not recorded"
 sed -i "s|^RESTIC_REPOSITORY=.*|RESTIC_REPOSITORY=$REPO|" "$BACKUP_ENV"
-pass "a failed backup exits non-zero, keeps last-success and leaves no unencrypted copy"
+pass "a failed backup exits non-zero, records last-failure, keeps last-success and leaves no unencrypted copy"
+sleep 1
+"$SCRIPTS/backup.sh" >/dev/null 2>&1 || fail "backup after a failure"
+[[ "$(cat "$STATE/last-success")" > "$(cat "$STATE/last-failure")" ]] || fail "a later success is not newer than the failure"
+[[ "$(stat -c %a "$STATE/last-success")" == "644" && "$(stat -c %a "$STATE")" == "755" ]] || fail "status not readable by the app"
+pass "a later good backup is newer than the failure, and the app can read both times"
 
 # 5. Two backups never run at once.
 exec 8>"$STATE/backup.lock"

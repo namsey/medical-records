@@ -328,6 +328,22 @@ class ConsentIn(BaseModel):
     version: str = Field(max_length=32)
 
 
+class DiskOut(BaseModel):
+    name: str
+    percent_used: int
+
+
+class SystemOut(BaseModel):
+    """The admin's Server page: details the public health checks leave out."""
+
+    disks: list[DiskOut]
+    disk_alert_percent: int
+    backup_state: str
+    last_backup_at: datetime | None
+    last_backup_failure_at: datetime | None
+    started_at: datetime
+
+
 class AuditOut(BaseModel):
     at: datetime
     action: str

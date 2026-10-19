@@ -209,6 +209,8 @@ account. Deleting an account removes all of its records and files.
 - **Admin → Activity** lists sign-ins, invites and account changes for one year. It never holds record contents,
   file names or IP addresses.
 - If something goes wrong, follow [docs/BREACH_RUNBOOK.md](docs/BREACH_RUNBOOK.md).
+- Monitoring: `/api/health`, `/api/health/disk` and `/api/health/backup` answer only ok or problem for an uptime
+  monitor, and **Admin → Server** shows disk use and the last backup (DEPLOY.md section 8).
 
 The notice and the runbook are plain-language drafts, not legal advice. Have them checked before inviting anyone.
 

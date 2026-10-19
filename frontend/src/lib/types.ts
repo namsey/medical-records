@@ -21,6 +21,16 @@ export interface PrivacyInfo {
   grievance_email: string
 }
 
+/** The admin's Server page. */
+export interface SystemInfo {
+  disks: { name: string; percent_used: number }[]
+  disk_alert_percent: number
+  backup_state: 'ok' | 'backup_failed' | 'backup_missing' | 'not_monitored'
+  last_backup_at: string | null
+  last_backup_failure_at: string | null
+  started_at: string
+}
+
 /** One audit log entry: account events only, never record contents. */
 export interface AuditEntry {
   at: string

@@ -799,6 +799,29 @@ describe('privacy', () => {
     expect(screen.queryByRole('button', { name: 'Delete my account' })).not.toBeInTheDocument()
   })
 
+  it('shows the server status to the admin', async () => {
+    mockApi({
+      'GET /api/auth/me': { ...USER, is_admin: true },
+      'GET /api/admin/invites': [],
+      'GET /api/admin/users': [],
+      'GET /api/admin/audit': [],
+      'GET /api/admin/system': {
+        disks: [{ name: 'data', percent_used: 85 }, { name: 'system', percent_used: 30 }],
+        disk_alert_percent: 80,
+        backup_state: 'backup_failed',
+        last_backup_at: '2026-10-18T21:05:00Z',
+        last_backup_failure_at: '2026-10-19T21:04:00Z',
+        started_at: '2026-10-19T08:00:00Z',
+      },
+    })
+    renderApp('/admin')
+    expect(await screen.findByRole('progressbar', { name: 'Data disk' })).toHaveAttribute('aria-valuenow', '85')
+    expect(screen.getByText('85% used')).toHaveClass('text-danger-700')
+    expect(screen.getByText('30% used')).not.toHaveClass('text-danger-700')
+    expect(screen.getByText('Last backup failed')).toBeInTheDocument()
+    expect(screen.getByText(/Last failed backup:/)).toBeInTheDocument()
+  })
+
   it('lists account activity for the admin', async () => {
     mockApi({
       'GET /api/auth/me': { ...USER, is_admin: true },

@@ -18,6 +18,7 @@ import type {
   RecordPage,
   RecordType,
   StorageUse,
+  SystemInfo,
   TagCount,
   YearCount,
   TimelineItem,
@@ -109,6 +110,10 @@ export function useDeleteMyAccount() {
       queryClient.setQueryData(ME_KEY, null)
     },
   })
+}
+
+export function useAdminSystem() {
+  return useQuery({ queryKey: ['admin', 'system'], queryFn: ({ signal }) => request<SystemInfo>('/api/admin/system', { signal }) })
 }
 
 export function useAuditLog() {

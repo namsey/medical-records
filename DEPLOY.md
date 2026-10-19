@@ -1,4 +1,4 @@
-# Deploying: backups
+# Deploying: backups and monitoring
 
 How the server's data is backed up, copied home and restored. (Server setup itself is not covered here yet.)
 
@@ -204,6 +204,65 @@ Then add `CLAMAV_SOCKET=/run/clamav/clamd.ctl` to the app's environment and rest
    app says "The virus scanner is not available" and logs "Virus scanner unavailable".
 
 clamd's default stream limit (25 MB) is above the 20 MB file limit.
+
+## 8. Monitoring and alerts
+
+The app has three public health checks. Each answers `200 {"status": "ok"}` or `503 {"status": "problem",
+"reason": ...}` and nothing else (no numbers, paths or user data):
+
+| Check | Fails when |
+| --- | --- |
+| `/api/health` | the app or its database is down (or the whole VM: then nothing answers) |
+| `/api/health/disk` | the data disk or the system disk is more than 80% full (`DISK_ALERT_PERCENT`) |
+| `/api/health/backup` | the last backup run failed, or no backup succeeded in the last 26 hours (`BACKUP_MAX_AGE_HOURS`) |
+
+**Admin → Server** in the app shows the details: disk use per disk, the last good and failed backup, and when the
+app started.
+
+### App settings
+
+Add to the app's environment (`/etc/medical-records/app.env`) and restart it:
+
+```bash
+BACKUP_STATUS_DIR=/var/lib/medical-records-backup   # where backup.sh writes last-success and last-failure
+```
+
+### Alerts with UptimeRobot (free plan)
+
+UptimeRobot is a US service. It learns only your app's address and whether these checks answer ok, never any
+user data.
+
+1. Sign up at uptimerobot.com with your email, and confirm the email alert contact.
+2. Add three **HTTP(s)** monitors, interval 5 minutes:
+   - `Medical records: app` → `https://<your domain>/api/health`
+   - `Medical records: disk` → `https://<your domain>/api/health/disk`
+   - `Medical records: backup` → `https://<your domain>/api/health/backup`
+3. Alert the email contact on "down" and "up" for each.
+4. Test it: stop the app (`sudo systemctl stop medical-records`). Within about 10 minutes you get emails for all
+   three. Start it again, and the "up" emails follow.
+
+A backup that fails at night turns `/api/health/backup` red straight away. The next good backup clears it.
+
+If Oracle ever stops or reclaims the VM (for example under the Always Free idle rules), the `app` monitor reports it.
+
+### App service and log rotation
+
+The app runs as a systemd service. Its logs and the backup's go to the system journal, which is capped at 500 MB
+and one month:
+
+```bash
+sudo useradd --system --home /srv/medical-records --shell /usr/sbin/nologin medical-records
+sudo install -m 600 -o medical-records /dev/null /etc/medical-records/app.env   # then fill it in
+sudo cp /opt/medical-records/deploy/systemd/medical-records.service /etc/systemd/system/
+sudo install -D -m 644 /opt/medical-records/deploy/journald/medical-records.conf \
+     /etc/systemd/journald.conf.d/medical-records.conf
+sudo systemctl restart systemd-journald
+sudo systemctl daemon-reload && sudo systemctl enable --now medical-records
+journalctl -u medical-records -n 50        # the app's recent log lines
+journalctl --disk-usage                    # stays under 500 MB
+```
+
+The app never logs record contents, search terms or file names.
 
 ## Notes
 

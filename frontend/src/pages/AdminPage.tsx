@@ -6,10 +6,10 @@ import { TextInput } from '@/components/ui/Field'
 import { CardSkeletons, ErrorMessage } from '@/components/ui/feedback'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
-import { useAdminInvites, useAdminUsers, useAuditLog, useCreateInvite, useDeleteUser, useMe, useRevokeInvite, useSetQuota, useSetUserDisabled } from '@/hooks/queries'
+import { useAdminInvites, useAdminSystem, useAdminUsers, useAuditLog, useCreateInvite, useDeleteUser, useMe, useRevokeInvite, useSetQuota, useSetUserDisabled } from '@/hooks/queries'
 import { errorMessage } from '@/lib/api'
 import { formatDate, formatFileSize, pluralize } from '@/lib/format'
-import type { AdminUser, CreatedInvite, Invite, InviteStatus } from '@/lib/types'
+import type { AdminUser, CreatedInvite, Invite, InviteStatus, SystemInfo } from '@/lib/types'
 import { NotFoundPage } from './NotFoundPage'
 
 const STATUS_STYLES: Record<InviteStatus, string> = {
@@ -323,6 +323,46 @@ function UserList() {
   )
 }
 
+const BACKUP_STATES: Record<SystemInfo['backup_state'], { text: string; className: string }> = {
+  ok: { text: 'Backups OK', className: 'bg-brand-50 text-brand-800' },
+  backup_failed: { text: 'Last backup failed', className: 'bg-danger-50 text-danger-700' },
+  backup_missing: { text: 'No recent backup', className: 'bg-danger-50 text-danger-700' },
+  not_monitored: { text: 'Backups not monitored', className: 'bg-wash text-muted' },
+}
+
+function ServerStatus() {
+  const { data, isPending, isError, error, refetch } = useAdminSystem()
+  if (isPending) return <CardSkeletons count={1} />
+  if (isError) return <ErrorMessage message={errorMessage(error)} onRetry={() => void refetch()} />
+  const backup = BACKUP_STATES[data.backup_state]
+
+  return (
+    <div className="card space-y-4 p-4">
+      {data.disks.map((disk) => {
+        const full = disk.percent_used > data.disk_alert_percent
+        const label = disk.name === 'data' ? 'Data disk' : 'System disk'
+        return (
+          <div key={disk.name} className="space-y-1.5">
+            <div className="flex items-baseline justify-between gap-3 text-sm">
+              <span className="font-semibold">{label}</span>
+              <span className={full ? 'font-semibold text-danger-700' : 'text-muted'}>{disk.percent_used}% used</span>
+            </div>
+            <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={disk.percent_used} className="h-2.5 overflow-hidden rounded-full bg-wash">
+              <div className={`h-full rounded-full ${full ? 'bg-danger-600' : 'bg-brand-700'}`} style={{ width: `${disk.percent_used}%` }} />
+            </div>
+          </div>
+        )
+      })}
+      <div className="space-y-1 text-sm">
+        <Badge className={backup.className}>{backup.text}</Badge>
+        <p className="text-muted">Last good backup: {data.last_backup_at ? formatDateTime(data.last_backup_at) : 'none yet'}</p>
+        {data.last_backup_failure_at && <p className="text-muted">Last failed backup: {formatDateTime(data.last_backup_failure_at)}</p>}
+        <p className="text-muted">App running since {formatDateTime(data.started_at)}</p>
+      </div>
+    </div>
+  )
+}
+
 function ActivityLog() {
   const { data, isPending, isError, error, refetch, hasNextPage, fetchNextPage, isFetchingNextPage } = useAuditLog()
   if (isPending) return <CardSkeletons count={2} />
@@ -399,6 +439,16 @@ export function AdminPage() {
           <p className="page-subtitle">Storage used per account. Nobody, including you, can see another account's records here.</p>
         </div>
         <UserList />
+      </section>
+
+      <section className="space-y-3" aria-labelledby="server-heading">
+        <div>
+          <h2 id="server-heading" className="section-heading">
+            Server
+          </h2>
+          <p className="page-subtitle">Alerts for these are sent by your uptime monitor (see DEPLOY.md).</p>
+        </div>
+        <ServerStatus />
       </section>
 
       <section className="space-y-3" aria-labelledby="activity-heading">

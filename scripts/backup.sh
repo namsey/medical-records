@@ -5,6 +5,8 @@
 #   BACKUP_ENV=/etc/medical-records/backup.env scripts/backup.sh
 #
 # Exits non-zero on any failure (systemd marks the run as failed) and only then leaves last-success alone.
+# STATE_DIR/last-success and last-failure hold the time of the last good and the last failed run; the app's
+# /api/health/backup check reads them (#45), so they are readable by everyone (they only hold a time).
 set -euo pipefail
 umask 077
 
@@ -12,14 +14,26 @@ umask 077
 source "$(dirname "${BASH_SOURCE[0]}")/backup-common.sh"
 
 mkdir -p "$STATE_DIR"
+chmod 755 "$STATE_DIR"
 exec 9>"$STATE_DIR/backup.lock"
 if ! flock -n 9; then
   log "Another backup is still running; not starting a second one"
   exit 1
 fi
 
-# The staging folder holds an unencrypted copy: always remove it, whatever happens.
-cleanup() { rm -rf "$STAGING_DIR"; }
+# The staging folder holds an unencrypted copy: always remove it, whatever happens. A failed run is recorded.
+cleanup() {
+  local status=$?
+  rm -rf "$STAGING_DIR"
+  if [[ $status -ne 0 ]]; then
+    write_status last-failure
+    log "Backup FAILED (exit $status)"
+  fi
+}
+write_status() {
+  date -u +%Y-%m-%dT%H:%M:%SZ >"$STATE_DIR/$1"
+  chmod 644 "$STATE_DIR/$1"
+}
 trap cleanup EXIT
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR/database"
@@ -49,5 +63,5 @@ if [[ "$(date +%u)" == "7" || "${FORCE_CHECK:-0}" == "1" ]]; then
   run_restic check --read-data-subset=5%
 fi
 
-date -u +%Y-%m-%dT%H:%M:%SZ >"$STATE_DIR/last-success"
+write_status last-success
 log "Backup finished"

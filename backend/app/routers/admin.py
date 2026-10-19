@@ -7,7 +7,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.schemas import AdminUserOut, AuditOut, DeleteUserIn, InviteCreated, InviteIn, InviteOut, QuotaIn
+from app.schemas import AdminUserOut, AuditOut, DeleteUserIn, InviteCreated, InviteIn, InviteOut, QuotaIn, SystemOut
 from app.security import admin_dependencies
 from app.services import rate_limit
 from app.services.admin_store import AdminStore, get_admin_store
@@ -40,6 +40,12 @@ def audit_log(
 ) -> list[AuditOut]:
     """Account events, newest first. Pass the oldest `at` you have as `before` for the next page."""
     return store.audit_log(before, limit)
+
+
+@router.get("/system", response_model=SystemOut)
+def system(store: AdminStore = Depends(get_admin_store)) -> SystemOut:
+    """Disk use, last backup and app start time. Never user data."""
+    return store.system()
 
 
 @router.get("/users", response_model=list[AdminUserOut])
