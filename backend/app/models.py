@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
@@ -83,6 +84,7 @@ class Doctor(Base):
     __tablename__ = "doctors"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     specialization: Mapped[str | None] = mapped_column(String(255))
     hospital: Mapped[str | None] = mapped_column(String(255))
@@ -98,6 +100,7 @@ class Lab(Base):
     __tablename__ = "labs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     address: Mapped[str | None] = mapped_column(Text)
     phone: Mapped[str | None] = mapped_column(String(50))
@@ -108,22 +111,26 @@ class Lab(Base):
 
 class Tag(Base):
     __tablename__ = "tags"
+    __table_args__ = (UniqueConstraint("user_id", "name_key", name="uq_tags_user_id_name_key"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(64))
-    name_key: Mapped[str] = mapped_column(String(64), unique=True)  # lower-cased name for case-insensitive identity
+    name_key: Mapped[str] = mapped_column(String(64))  # lower-cased name; unique per user, case-insensitive
 
 
 class MedicalRecord(Base):
-    """One medical record. Which columns are used depends on `record_type`."""
+    """One medical record, owned by one user. Which columns are used depends on `record_type`."""
 
     __tablename__ = "medical_records"
     __table_args__ = (
         Index("ix_medical_records_date", "record_date", "created_at"),
         Index("ix_medical_records_type", "record_type"),
+        Index("ix_medical_records_user_date", "user_id", "record_date", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     record_type: Mapped[str] = mapped_column(String(32))
     title: Mapped[str] = mapped_column(String(255))
     record_date: Mapped[date] = mapped_column(Date)
@@ -204,7 +211,8 @@ class Document(Base):
     record_id: Mapped[str] = mapped_column(ForeignKey("medical_records.id", ondelete="CASCADE"), index=True)
     original_filename: Mapped[str] = mapped_column(String(255))
     stored_filename: Mapped[str] = mapped_column(String(64), unique=True)
-    storage_folder: Mapped[str] = mapped_column(String(32))
+    # Type folder under the old UPLOAD_DIR layout; "" once the file lives under FILES_DIR/<user_id>/.
+    storage_folder: Mapped[str] = mapped_column(String(32), default="")
     content_type: Mapped[str] = mapped_column(String(100))
     size_bytes: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)

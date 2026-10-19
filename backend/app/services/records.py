@@ -50,9 +50,12 @@ LIST_LOAD = (
 )
 
 
-def get_record_or_404(db: Session, record_id: str, *, full: bool = True) -> MedicalRecord:
+def get_record_or_404(db: Session, user_id: str, record_id: str, *, full: bool = True) -> MedicalRecord:
+    """The user's record, or 404 (also when it belongs to someone else)."""
     options = FULL_LOAD if full else LIST_LOAD
-    record = db.scalar(select(MedicalRecord).where(MedicalRecord.id == record_id).options(*options))
+    record = db.scalar(
+        select(MedicalRecord).where(MedicalRecord.id == record_id, MedicalRecord.user_id == user_id).options(*options)
+    )
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
     return record
@@ -79,9 +82,9 @@ def _sync_tags(db: Session, record: MedicalRecord, names: list[str]) -> None:
     tags: list[Tag] = []
     for name in names:
         key = name.lower()
-        tag = db.scalar(select(Tag).where(Tag.name_key == key))
+        tag = db.scalar(select(Tag).where(Tag.user_id == record.user_id, Tag.name_key == key))
         if tag is None:
-            tag = Tag(name=name, name_key=key)
+            tag = Tag(user_id=record.user_id, name=name, name_key=key)
             db.add(tag)
             db.flush()
         tags.append(tag)
@@ -98,9 +101,10 @@ def apply_payload(db: Session, record: MedicalRecord, payload: RecordIn) -> None
     doctor = None
     if payload.doctor_id:
         doctor = db.get(Doctor, payload.doctor_id)
-        if doctor is None:
+        if doctor is None or doctor.user_id != record.user_id:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Selected doctor does not exist")
-    if payload.lab_id and db.get(Lab, payload.lab_id) is None:
+    lab = db.get(Lab, payload.lab_id) if payload.lab_id else None
+    if payload.lab_id and (lab is None or lab.user_id != record.user_id):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Selected laboratory does not exist")
 
     record.record_type = payload.record_type.value
@@ -121,13 +125,13 @@ def apply_payload(db: Session, record: MedicalRecord, payload: RecordIn) -> None
     _sync_tags(db, record, payload.tags)
 
 
-def create_record(db: Session, payload: RecordIn) -> MedicalRecord:
-    record = MedicalRecord()
+def create_record(db: Session, user_id: str, payload: RecordIn) -> MedicalRecord:
+    record = MedicalRecord(user_id=user_id)
     apply_payload(db, record, payload)
     db.add(record)
     db.flush()
     db.commit()
-    return get_record_or_404(db, record.id)
+    return get_record_or_404(db, user_id, record.id)
 
 
 def update_record(db: Session, record: MedicalRecord, payload: RecordIn) -> MedicalRecord:
@@ -135,7 +139,7 @@ def update_record(db: Session, record: MedicalRecord, payload: RecordIn) -> Medi
     db.flush()
     remove_orphan_tags(db)
     db.commit()
-    return get_record_or_404(db, record.id)
+    return get_record_or_404(db, record.user_id, record.id)
 
 
 def delete_record(db: Session, record: MedicalRecord) -> None:
