@@ -14,6 +14,8 @@ from app.config import BACKEND_ROOT, get_settings
 
 logger = logging.getLogger(__name__)
 
+KEEP_SNAPSHOTS = 3
+
 
 def alembic_config() -> Config:
     config = Config(str(BACKEND_ROOT / "alembic.ini"))
@@ -56,7 +58,24 @@ def snapshot_before_migrations(database: Path, backups_dir: Path) -> Path | None
     return snapshot
 
 
+def prune_snapshots(backups_dir: Path, keep: int = KEEP_SNAPSHOTS) -> int:
+    """Delete all but the `keep` newest pre-migration snapshots. Returns how many were deleted."""
+    if not backups_dir.is_dir():
+        return 0
+    # Names are pre-<revision>-<UTC time>.db, so the part after the last "-" sorts by age.
+    snapshots = sorted(backups_dir.glob("pre-*.db"), key=lambda path: path.stem.rsplit("-", 1)[-1], reverse=True)
+    old = snapshots[keep:]
+    for path in old:
+        path.unlink(missing_ok=True)
+    if old:
+        logger.info("Deleted %d old pre-migration database copies", len(old))
+    return len(old)
+
+
 def run_migrations() -> None:
     database = get_settings().sqlite_path
-    snapshot_before_migrations(database, database.parent / "backups")
+    backups_dir = database.parent / "backups"
+    snapshot_before_migrations(database, backups_dir)
     command.upgrade(alembic_config(), "head")
+    # Only after a successful upgrade: if it fails, every copy stays for the restore.
+    prune_snapshots(backups_dir)
