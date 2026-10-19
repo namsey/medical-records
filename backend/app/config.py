@@ -35,14 +35,14 @@ class Settings(BaseSettings):
     upload_dir: str = "data/uploads"  # old layout, only read to move files into files_dir
     max_upload_size_mb: int = Field(default=20, ge=1, le=500)
     default_quota_mb: int = Field(default=100, ge=1, le=1_000_000)  # per account, unless the admin sets another
-    clamav_socket: str = ""
+    clamav_socket: str = ""  # e.g. /run/clamav/clamd.ctl: scan every upload with ClamAV
     # Shown in the app as the contact for privacy questions and complaints (default: the admin's email).
     # Monitoring (#45): /api/health/disk fails above this, /api/health/backup reads backup.sh's status files.
     disk_alert_percent: int = Field(default=80, ge=1, le=100)
     backup_status_dir: str = ""  # e.g. /var/lib/medical-records-backup; empty: backups are not monitored
     backup_max_age_hours: int = Field(default=26, ge=1, le=24 * 30)
     grievance_name: str = ""
-    grievance_email: str = ""  # e.g. /run/clamav/clamd.ctl: scan every upload with ClamAV
+    grievance_email: str = ""
     session_max_age_days: int = Field(default=14, ge=1, le=365)
 
     @property
