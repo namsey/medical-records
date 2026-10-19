@@ -1,11 +1,15 @@
 import { LogIn, ShieldCheck } from 'lucide-react'
 import { Navigate, useSearchParams } from 'react-router-dom'
+import { AuthShell } from '@/components/layout/AuthShell'
 import { buttonClasses } from '@/components/ui/Button'
 import { LoadingState } from '@/components/ui/feedback'
 import { useMe } from '@/hooks/queries'
 
 const MESSAGES: Record<string, string> = {
-  not_allowed: 'That Google account is not allowed to use this app.',
+  not_invited: 'This Google account has no invite. Ask the person who runs this app to invite you.',
+  invite_invalid: 'This invite link has expired, was already used or was revoked. Ask for a new one.',
+  invite_wrong_account: 'This invite is for a different Google account. Sign in with the account the invite was sent to.',
+  disabled: 'This account has been disabled.',
   denied: 'Sign-in was cancelled.',
   failed: 'Sign-in did not work. Please try again.',
 }
@@ -19,17 +23,7 @@ export function LoginPage() {
   if (user) return <Navigate to="/" replace />
 
   return (
-    <main className="page-container flex min-h-dvh max-w-md flex-col justify-center py-10">
-      <div className="mb-8 text-center">
-        <div className="mx-auto mb-5 grid size-20 place-items-center rounded-3xl bg-brand-700 text-paper shadow-md">
-          <svg viewBox="0 0 64 64" className="size-11" aria-hidden>
-            <path d="M26 10h12v16h16v12H38v16H26V38H10V26h16z" fill="currentColor" />
-          </svg>
-        </div>
-        <h1 className="page-title">Medical Records</h1>
-        <p className="page-subtitle mt-2">Your private health journal: prescriptions, lab reports and visits in one place.</p>
-      </div>
-
+    <AuthShell subtitle="Your private health journal: prescriptions, lab reports and visits in one place.">
       {error && (
         <p role="alert" className="mb-4 rounded-xl border border-danger-600/25 bg-danger-50 p-3 text-center text-sm text-danger-700">
           {MESSAGES[error] ?? MESSAGES.failed}
@@ -44,8 +38,8 @@ export function LoginPage() {
 
       <p className="mt-6 flex items-center justify-center gap-2 text-center text-sm text-muted">
         <ShieldCheck className="size-4 shrink-0" aria-hidden />
-        Only the owner's Google account can open this app.
+        Only invited Google accounts can open this app.
       </p>
-    </main>
+    </AuthShell>
   )
 }

@@ -10,6 +10,36 @@ export type RecordType =
 export interface User {
   email: string
   name: string | null
+  is_admin: boolean
+}
+
+export type InviteStatus = 'pending' | 'used' | 'expired' | 'revoked'
+
+export interface Invite {
+  id: string
+  email: string
+  status: InviteStatus
+  created_at: string
+  expires_at: string
+  used_at: string | null
+}
+
+/** Only the response that creates an invite has its link: the server keeps just a hash of it. */
+export interface CreatedInvite extends Invite {
+  link: string
+}
+
+/** What the admin sees about an account: counts and sizes, never records or files. */
+export interface AdminUser {
+  id: string
+  email: string
+  name: string | null
+  is_admin: boolean
+  disabled: boolean
+  created_at: string
+  last_login_at: string | null
+  file_count: number
+  storage_bytes: number
 }
 
 export interface Doctor {

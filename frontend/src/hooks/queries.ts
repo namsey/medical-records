@@ -2,9 +2,12 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { ApiError, request } from '@/lib/api'
 import { ME_KEY } from '@/lib/queryClient'
 import type {
+  AdminUser,
+  CreatedInvite,
   Doctor,
   DoctorInput,
   DocumentInfo,
+  Invite,
   Lab,
   LabInput,
   MedicalRecord,
@@ -64,6 +67,62 @@ export function useLogout() {
       queryClient.clear()
       queryClient.setQueryData(ME_KEY, null)
     },
+  })
+}
+
+// ------------------------------------------------------------------ invites and admin
+
+export function useInviteCheck(token: string | undefined) {
+  return useQuery({
+    queryKey: ['invite-check', token],
+    queryFn: ({ signal }) => request<{ valid: boolean }>(`/api/auth/invite/${encodeURIComponent(token ?? '')}`, { signal }),
+    enabled: Boolean(token),
+    retry: false,
+  })
+}
+
+const ADMIN_INVITES_KEY = ['admin', 'invites']
+const ADMIN_USERS_KEY = ['admin', 'users']
+
+export function useAdminInvites() {
+  return useQuery({ queryKey: ADMIN_INVITES_KEY, queryFn: ({ signal }) => request<Invite[]>('/api/admin/invites', { signal }) })
+}
+
+export function useAdminUsers() {
+  return useQuery({ queryKey: ADMIN_USERS_KEY, queryFn: ({ signal }) => request<AdminUser[]>('/api/admin/users', { signal }) })
+}
+
+export function useCreateInvite() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (email: string) => request<CreatedInvite>('/api/admin/invites', { method: 'POST', json: { email } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ADMIN_INVITES_KEY }),
+  })
+}
+
+export function useRevokeInvite() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => request<Invite>(`/api/admin/invites/${id}/revoke`, { method: 'POST' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ADMIN_INVITES_KEY }),
+  })
+}
+
+export function useSetUserDisabled() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, disabled }: { id: string; disabled: boolean }) =>
+      request<void>(`/api/admin/users/${id}/${disabled ? 'disable' : 'enable'}`, { method: 'POST' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ADMIN_USERS_KEY }),
+  })
+}
+
+export function useDeleteUser() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, confirmEmail }: { id: string; confirmEmail: string }) =>
+      request<void>(`/api/admin/users/${id}/delete`, { method: 'POST', json: { confirm_email: confirmEmail } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ADMIN_USERS_KEY }),
   })
 }
 

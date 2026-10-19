@@ -1,4 +1,4 @@
-import { CalendarClock, ChevronRight, Database, FileJson, FlaskConical, LogOut, Stethoscope, type LucideIcon } from 'lucide-react'
+import { CalendarClock, ChevronRight, Database, FileJson, FlaskConical, LogOut, Stethoscope, UsersRound, type LucideIcon } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -46,6 +46,7 @@ export function ProfilePage() {
         <MenuLink to="/timeline" icon={CalendarClock} title="Timeline" hint="Everything in date order" />
         <MenuLink to="/doctors" icon={Stethoscope} title="Doctors" hint="Your doctor directory" />
         <MenuLink to="/labs" icon={FlaskConical} title="Laboratories" hint="Your laboratory directory" />
+        {user?.is_admin && <MenuLink to="/admin" icon={UsersRound} title="Admin" hint="Invite people and manage accounts" />}
       </section>
 
       <section className="space-y-3" aria-labelledby="backup-heading">
@@ -55,7 +56,7 @@ export function ProfilePage() {
           </h2>
           <p className="page-subtitle">Keep a copy of your records somewhere safe. Backups contain private medical data.</p>
         </div>
-        <DownloadLink href="/api/backup" icon={Database} title="Full backup (ZIP)" hint="Database and all uploaded files" />
+        <DownloadLink href="/api/backup" icon={Database} title="Full backup (ZIP)" hint="Your records and all your uploaded files" />
         <DownloadLink href="/api/export/json" icon={FileJson} title="Export records (JSON)" hint="Structured data without the files" />
       </section>
 

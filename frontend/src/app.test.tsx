@@ -18,8 +18,8 @@ describe('authentication', () => {
 
   it('explains why a sign-in was refused', async () => {
     mockApi({ 'GET /api/auth/me': () => ({ status: 401, json: {} }) })
-    renderApp('/login?error=not_allowed')
-    expect(await screen.findByRole('alert')).toHaveTextContent(/not allowed/i)
+    renderApp('/login?error=not_invited')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/has no invite/i)
   })
 
   it('leaves the login page once signed in', async () => {
@@ -566,5 +566,124 @@ describe('profile', () => {
     mockApi(authed)
     renderApp('/more')
     expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
+  })
+})
+
+describe('invites', () => {
+  const signedOut = { 'GET /api/auth/me': () => ({ status: 401, json: {} }) }
+
+  it('lets an invited person sign in with the invite', async () => {
+    mockApi({ ...signedOut, 'GET /api/auth/invite/secret123': { valid: true } })
+    renderApp('/invite/secret123')
+    expect(await screen.findByRole('link', { name: /sign in with google/i })).toHaveAttribute('href', '/api/auth/login?invite=secret123')
+    expect(screen.getByText(/the link works once/i)).toBeInTheDocument()
+  })
+
+  it('explains an invite link that no longer works', async () => {
+    mockApi({ ...signedOut, 'GET /api/auth/invite/old': { valid: false } })
+    renderApp('/invite/old')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/expired, was already used or was revoked/i)
+    expect(screen.queryByRole('link', { name: /sign in with google/i })).not.toBeInTheDocument()
+  })
+
+  it('explains each refused sign-in', async () => {
+    mockApi(signedOut)
+    renderApp('/login?error=invite_wrong_account')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/different Google account/i)
+  })
+})
+
+describe('admin', () => {
+  const ADMIN = { ...USER, is_admin: true }
+  const admin = { 'GET /api/auth/me': ADMIN }
+  const invite = { id: 'i1', email: 'friend@example.com', status: 'pending', created_at: '2026-10-19T10:00:00Z', expires_at: '2026-10-26T10:00:00Z', used_at: null }
+  const accounts = [
+    { id: 'u1', email: 'naman@example.com', name: 'Naman', is_admin: true, disabled: false, created_at: '2026-01-01T00:00:00Z', last_login_at: '2026-10-19T09:00:00Z', file_count: 0, storage_bytes: 0 },
+    { id: 'u2', email: 'friend@example.com', name: 'Friend', is_admin: false, disabled: false, created_at: '2026-10-19T00:00:00Z', last_login_at: null, file_count: 3, storage_bytes: 3 * 1024 * 1024 },
+  ]
+
+  it('is linked from Profile only for the admin', async () => {
+    mockApi(admin)
+    renderApp('/profile')
+    expect(await screen.findByRole('link', { name: /admin/i })).toHaveAttribute('href', '/admin')
+  })
+
+  it('is hidden from everyone else', async () => {
+    mockApi(authed)
+    renderApp('/profile')
+    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /admin/i })).not.toBeInTheDocument()
+  })
+
+  it('shows the not-found page to a non-admin who opens it', async () => {
+    const calls = mockApi(authed)
+    renderApp('/admin')
+    expect(await screen.findByRole('heading', { name: /not found/i })).toBeInTheDocument()
+    expect(calls.some((c) => c.path.startsWith('/api/admin'))).toBe(false)
+  })
+
+  it('creates an invite and shows its link once, ready to copy', async () => {
+    const calls = mockApi({
+      ...admin,
+      'GET /api/admin/invites': [],
+      'GET /api/admin/users': accounts,
+      'POST /api/admin/invites': () => ({ status: 201, json: { ...invite, link: 'https://records.example/invite/secret123' } }),
+    })
+    renderApp('/admin')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Email address'), 'friend@example.com')
+    await user.click(screen.getByRole('button', { name: /create invite link/i }))
+    expect(await screen.findByLabelText('Invite link')).toHaveValue('https://records.example/invite/secret123')
+    expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ email: 'friend@example.com' })
+    await user.click(screen.getByRole('button', { name: /copy link/i }))
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument()
+    // userEvent stands in for the system clipboard.
+    expect(await navigator.clipboard.readText()).toBe('https://records.example/invite/secret123')
+  })
+
+  it('revokes a pending invite after confirming', async () => {
+    const calls = mockApi({
+      ...admin,
+      'GET /api/admin/invites': [invite],
+      'GET /api/admin/users': accounts,
+      'POST /api/admin/invites/i1/revoke': { ...invite, status: 'revoked' },
+    })
+    renderApp('/admin')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Revoke invite for friend@example.com' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Revoke this invite?' })).getByRole('button', { name: 'Revoke' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.path === '/api/admin/invites/i1/revoke')).toBe(true))
+  })
+
+  it('lists accounts with storage, and disables one', async () => {
+    const calls = mockApi({ ...admin, 'GET /api/admin/invites': [], 'GET /api/admin/users': accounts, 'POST /api/admin/users/u2/disable': () => ({ status: 204 }) })
+    renderApp('/admin')
+    expect(await screen.findByText(paragraph('Never signed in · 3 files · 3.0 MB'))).toBeInTheDocument()
+    // The admin's own account has no disable or delete buttons.
+    expect(screen.queryByRole('button', { name: 'Disable naman@example.com' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Disable friend@example.com' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.path === '/api/admin/users/u2/disable')).toBe(true))
+  })
+
+  it('deletes an account only after its email is typed', async () => {
+    const calls = mockApi({ ...admin, 'GET /api/admin/invites': [], 'GET /api/admin/users': accounts, 'POST /api/admin/users/u2/delete': () => ({ status: 204 }) })
+    renderApp('/admin')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Delete friend@example.com' }))
+    const dialog = () => screen.getByRole('dialog', { name: 'Delete this account?' })
+    const confirm = () => within(dialog()).getByRole('button', { name: 'Delete' })
+    const input = () => within(dialog()).getByLabelText('Type the email to confirm')
+    await screen.findByRole('dialog', { name: 'Delete this account?' })
+    expect(confirm()).toBeDisabled()
+    await user.type(input(), 'friend@example')
+    expect(input()).toHaveValue('friend@example')
+    expect(confirm()).toBeDisabled()
+    await user.clear(input())
+    await user.type(input(), 'Friend@Example.com')
+    expect(input()).toHaveValue('Friend@Example.com')
+    expect(confirm()).toBeEnabled()
+    await user.click(confirm())
+    await waitFor(() => expect(calls.map((c) => c.path)).toContain('/api/admin/users/u2/delete'))
+    expect(calls.find((c) => c.path === '/api/admin/users/u2/delete')!.body).toEqual({ confirm_email: 'Friend@Example.com' })
   })
 })

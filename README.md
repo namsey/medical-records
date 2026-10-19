@@ -67,7 +67,7 @@ cd medical-records
 
 # 1. Configuration
 Copy-Item .env.example .env
-notepad .env        # fill in GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, ALLOWED_EMAIL, SESSION_SECRET
+notepad .env        # fill in GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, ADMIN_EMAIL, SESSION_SECRET
 # Generate a SESSION_SECRET value with:
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 
@@ -181,6 +181,19 @@ alembic revision --autogenerate -m "describe the change"
 alembic upgrade head
 ```
 
+## Inviting people
+
+`ADMIN_EMAIL` is the admin account (the old setting name `ALLOWED_EMAIL` still works). Nobody else can sign in
+without an invite:
+
+1. Open **Profile → Admin**, type the person's email and choose **Create invite link**.
+2. Copy the link (it is shown only once) and send it yourself, for example by message. It works once, for 7 days,
+   and only with the Google account for that email.
+3. They open the link and choose **Sign in with Google**. After that they sign in normally.
+
+In the same place you can revoke a pending invite, see each account's storage, and disable, enable or delete an
+account. Deleting an account removes all of its records and files.
+
 ## Backup and restore
 
 On a server, nightly encrypted backups of all data go to Oracle Object Storage in Mumbai, with a weekly copy to
@@ -211,7 +224,7 @@ To restore: stop the app, unzip the backup, copy `database/medical_records.db` t
 | Copy of the database taken before an upgrade changes it | `data/backups/pre-<revision>-<time>.db` | (next to the database) |
 
 Every record, doctor, laboratory and tag belongs to one user. Upgrades run by themselves when the app starts:
-existing data is given to the `ALLOWED_EMAIL` account, and files from the old `data/uploads/<type>/` layout
+existing data is given to the `ADMIN_EMAIL` account, and files from the old `data/uploads/<type>/` layout
 (`UPLOAD_DIR`) are moved into `data/files/<user id>/`. If anything goes wrong, stop the app, put the `pre-…` copy
 back as `data/medical_records.db` and move the files back.
 
@@ -220,8 +233,11 @@ SQLite must not live on a network file system (NFS).
 
 ## Security notes
 
-- Google OAuth (authorisation-code flow with PKCE and a state check). Only the verified account matching
-  `ALLOWED_EMAIL` gets a session; anyone else is refused.
+- Google OAuth (authorisation-code flow with PKCE and a state check). Only the admin (`ADMIN_EMAIL`) and
+  accounts created from an invite get a session; anyone else is refused. A disabled account is signed out on its
+  next request.
+- Invites are single-use, bound to one email and valid for 7 days. The database keeps only an HMAC of each invite
+  link's secret. The admin panel shows accounts, invites and storage used, never anyone's records or files.
 - Server-side sessions: the browser holds only a random token in an HTTP-only, `SameSite=Lax` cookie (Secure when
   you use HTTPS). The database stores an HMAC of the token, never the token. Sessions expire after 14 days.
 - Every record, doctor, laboratory, tag and file belongs to one user, and every query is limited to the signed-in
@@ -240,7 +256,7 @@ SQLite must not live on a network file system (NFS).
 
 ## Limitations
 
-- Single user by design. Changing `ALLOWED_EMAIL` locks out the previous account.
+- Invite links are copied and sent by hand; the app does not send email.
 - Backups are plain (unencrypted) ZIP files, and there is no in-app restore button (see the steps above).
 - Search is a case-insensitive substring match on the text you entered; it does not understand synonyms.
 - Case-insensitive matching in SQLite covers English letters; accented characters match case-sensitively.
