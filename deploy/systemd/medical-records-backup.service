@@ -1,0 +1,20 @@
+[Unit]
+Description=Medical records: encrypted backup to Oracle Object Storage (Mumbai)
+Documentation=file:///opt/medical-records/DEPLOY.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=BACKUP_ENV=/etc/medical-records/backup.env
+ExecStart=/opt/medical-records/scripts/backup.sh
+# Runs as root to read the app's files; kept away from everything else it does not need.
+Nice=10
+IOSchedulingClass=idle
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+StateDirectory=medical-records-backup
+CacheDirectory=medical-records-backup
+TimeoutStartSec=4h

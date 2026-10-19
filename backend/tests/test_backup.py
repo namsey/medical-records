@@ -1,10 +1,20 @@
+import asyncio
 import io
 import json
 import re
 import sqlite3
 import zipfile
 
+from starlette.datastructures import UploadFile
+
+from app.database import SessionLocal
+from app.models import User
+from app.schemas import RecordIn
+from app.services import audit
+from app.services.record_store import SqlRecordStore
 from tests.conftest import PDF_BYTES, PNG_BYTES
+
+OTHER_PDF = b"%PDF-1.4\nanother user's file\n%%EOF\n"
 
 
 def _seed(client, make_record):
@@ -27,9 +37,9 @@ def test_backup_zip_contains_database_and_files(client, make_record, tmp_path):
     names = archive.namelist()
     assert "database/medical_records.db" in names
     assert "backup_info.json" in names
-    uploads = [n for n in names if n.startswith("uploads/")]
-    assert len(uploads) == 2
-    assert {archive.read(n) for n in uploads} == {PDF_BYTES, PNG_BYTES}
+    files = [n for n in names if n.startswith("files/")]
+    assert len(files) == 2
+    assert {archive.read(n) for n in files} == {PDF_BYTES, PNG_BYTES}
 
     database = tmp_path / "restored.db"
     database.write_bytes(archive.read("database/medical_records.db"))
@@ -90,3 +100,70 @@ def test_json_export_includes_prescription_and_lab_details(client, make_record):
     by_type = {r["record_type"]: r for r in records}
     assert by_type["prescription"]["medicines"][0]["name"] == "Paracetamol"
     assert by_type["lab_report"]["results"][0]["flag"] == "Normal"
+
+
+def _seed_other_user() -> None:
+    """Another user's doctor, lab, tagged record and file, written straight through their own store."""
+    with SessionLocal() as db:
+        other = User(email="other@example.com")
+        db.add(other)
+        db.commit()
+        store = SqlRecordStore(db, other.id)
+        doctor = store.create_doctor({"name": "Dr. OtherSecret"})
+        store.create_lab({"name": "OtherSecret Lab"})
+        record = store.create(
+            RecordIn.model_validate(
+                {
+                    "record_type": "doctor_visit",
+                    "record_date": "2026-09-05",
+                    "doctor_id": doctor.id,
+                    "reason": "OtherSecret reason",
+                    "tags": ["OtherSecretTag"],
+                }
+            )
+        )
+        upload = UploadFile(file=io.BytesIO(OTHER_PDF), filename="other.pdf")
+        asyncio.run(store.add_documents(record, [upload]))
+
+
+def test_backup_holds_only_the_signed_in_users_data(client, make_record, tmp_path):
+    _seed(client, make_record)
+    _seed_other_user()
+    # Server-wide metadata about other people: a pending invite, and audit entries naming another account.
+    assert client.post("/api/admin/invites", json={"email": "pending@example.com"}).status_code == 201
+    with SessionLocal() as db:
+        other = db.query(User).filter_by(email="other@example.com").one()
+        audit.record(db, "account_disabled", target=other)
+
+    archive = zipfile.ZipFile(io.BytesIO(client.get("/api/backup").content))
+    files = [n for n in archive.namelist() if n.startswith("files/")]
+    assert {archive.read(n) for n in files} == {PDF_BYTES, PNG_BYTES}
+    assert json.loads(archive.read("backup_info.json"))["uploaded_files"] == 2
+
+    raw = archive.read("database/medical_records.db")
+    assert b"OtherSecret" not in raw  # not even in free pages
+    assert b"other@example.com" not in raw
+    assert b"pending@example.com" not in raw
+    database = tmp_path / "restored.db"
+    database.write_bytes(raw)
+    connection = sqlite3.connect(database)
+    try:
+        for table, expected in (("users", 1), ("medical_records", 1), ("doctors", 1), ("labs", 0), ("tags", 1),
+                                ("documents", 2), ("record_tags", 1)):
+            assert connection.execute(f"select count(*) from {table}").fetchone()[0] == expected, table
+        assert connection.execute("select email from users").fetchone()[0] == "owner@example.com"
+        assert connection.execute("pragma foreign_key_check").fetchall() == []
+        # Only the account's own tables keep rows: no sessions, invites or audit log.
+        for table in ("sessions", "invites", "audit_events"):
+            assert connection.execute(f"select count(*) from {table}").fetchone()[0] == 0, table
+    finally:
+        connection.close()
+
+
+def test_json_export_holds_only_the_signed_in_users_data(client, make_record):
+    _seed(client, make_record)
+    _seed_other_user()
+    response = client.get("/api/export/json")
+    assert b"OtherSecret" not in response.content
+    data = json.loads(response.content)
+    assert data["counts"] == {"records": 1, "doctors": 1, "laboratories": 0, "tags": 1}

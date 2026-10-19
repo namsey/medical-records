@@ -23,6 +23,14 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    # Tests can hand in a connection to migrate a database other than the configured one.
+    connection = config.attributes.get("connection")
+    if connection is not None:
+        context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=True)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     engine = create_engine(
         get_settings().resolved_database_url,
         connect_args={"check_same_thread": False},

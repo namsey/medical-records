@@ -78,7 +78,7 @@ export function renderApp(path = '/') {
   )
 }
 
-export const USER = { email: 'naman@example.com', name: 'Naman' }
+export const USER = { email: 'naman@example.com', name: 'Naman', is_admin: false, needs_consent: false }
 
 export function summary(overrides: Partial<RecordSummary> = {}): RecordSummary {
   return {

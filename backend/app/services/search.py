@@ -82,11 +82,12 @@ def _term_condition(term: str):
     return or_(*conditions)
 
 
-def build_query(filters: RecordFilters) -> Select:
+def build_query(user_id: str, filters: RecordFilters) -> Select:
     stmt = (
         select(MedicalRecord)
         .outerjoin(Doctor, MedicalRecord.doctor_id == Doctor.id)
         .outerjoin(Lab, MedicalRecord.lab_id == Lab.id)
+        .where(MedicalRecord.user_id == user_id)
     )
     if filters.q:
         for term in filters.q.split()[:MAX_TERMS]:
@@ -113,9 +114,10 @@ def _ordering(filters: RecordFilters):
 
 
 def search_records(
-    db: Session, filters: RecordFilters, limit: int | None, offset: int = 0
+    db: Session, user_id: str, filters: RecordFilters, limit: int | None, offset: int = 0
 ) -> tuple[list[MedicalRecord], int]:
-    stmt = build_query(filters)
+    """The user's records matching the filters (one page of them) and the total number of matches."""
+    stmt = build_query(user_id, filters)
     total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
     stmt = stmt.options(*LIST_LOAD).order_by(*_ordering(filters)).offset(offset)
     if limit is not None:

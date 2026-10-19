@@ -1,4 +1,4 @@
-"""Test setup: an isolated temp database and upload folder, and helpers for authenticated clients."""
+"""Test setup: an isolated temp database and files folder, and helpers for authenticated clients."""
 
 import os
 import shutil
@@ -13,9 +13,10 @@ os.environ.update(
         "GOOGLE_CLIENT_ID": "test-client-id",
         "GOOGLE_CLIENT_SECRET": "test-client-secret",
         "GOOGLE_REDIRECT_URI": "http://localhost:8000/api/auth/callback",
-        "ALLOWED_EMAIL": "owner@example.com",
+        "ADMIN_EMAIL": "owner@example.com",
         "SESSION_SECRET": "test-secret-test-secret-test-secret-1234",
         "DATABASE_URL": f"sqlite:///{_TEST_ROOT / 'test.db'}",
+        "FILES_DIR": str(_TEST_ROOT / "files"),
         "UPLOAD_DIR": str(_TEST_ROOT / "uploads"),
         "MAX_UPLOAD_SIZE_MB": "20",
     }
@@ -27,13 +28,16 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.database import Base, SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
-from app.services import sessions  # noqa: E402
+from app.privacy import PRIVACY_VERSION  # noqa: E402
+from app.services import rate_limit, sessions  # noqa: E402
 
 CSRF_HEADERS = {"X-Requested-With": "XMLHttpRequest"}
 
 PDF_BYTES = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n"
 JPEG_BYTES = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
 PNG_BYTES = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+# The start of an iPhone photo: an ISO-BMFF "ftyp" box with the "heic" brand.
+HEIC_BYTES = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic" + b"\x00" * 40
 WEBP_BYTES = b"RIFF\x1a\x00\x00\x00WEBPVP8 \x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 
 
@@ -48,14 +52,16 @@ def _lifespan() -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def _clean_state() -> Iterator[None]:
     yield
+    for limiter in rate_limit.ALL_LIMITERS:
+        limiter.reset()
     with SessionLocal() as db:
         for table in reversed(Base.metadata.sorted_tables):
             db.execute(table.delete())
         db.commit()
-    uploads = get_settings().upload_path
-    for folder in uploads.iterdir():
-        for item in folder.iterdir():
-            item.unlink()
+    for folder in (get_settings().files_path, get_settings().upload_path):
+        if folder.is_dir():
+            for item in folder.iterdir():
+                shutil.rmtree(item) if item.is_dir() else item.unlink()
 
 
 @pytest.fixture
@@ -64,10 +70,26 @@ def anon() -> TestClient:
     return TestClient(app, headers=CSRF_HEADERS)
 
 
-def make_session_token(email: str = "owner@example.com") -> str:
+def make_session_token(email: str = "owner@example.com", consented: bool = True) -> str:
+    """A session for `email` (the account is made if needed). By default it has agreed to the privacy notice."""
     with SessionLocal() as db:
         user = sessions.get_or_create_user(db, email, "Owner")
+        if consented:
+            user.consent_version = PRIVACY_VERSION
+            db.commit()
         return sessions.create_session(db, user)
+
+
+OWNER_EMAIL = "owner@example.com"
+SECOND_EMAIL = "second@example.com"
+
+
+@pytest.fixture
+def second_client() -> TestClient:
+    """A client logged in as a second, separate user (an ordinary account, as if made from an invite)."""
+    test_client = TestClient(app, headers=CSRF_HEADERS)
+    test_client.cookies.set("session", make_session_token(SECOND_EMAIL))
+    return test_client
 
 
 @pytest.fixture

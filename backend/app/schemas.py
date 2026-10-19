@@ -3,7 +3,7 @@
 import re
 from datetime import date, datetime
 from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
@@ -314,3 +314,93 @@ class TimelineItem(BaseModel):
 class UserOut(BaseModel):
     email: str
     name: str | None
+    is_admin: bool = False
+    needs_consent: bool = False  # has not agreed to the current privacy notice yet
+
+
+class PrivacyInfo(BaseModel):
+    version: str
+    grievance_name: str
+    grievance_email: str
+
+
+class ConsentIn(BaseModel):
+    version: str = Field(max_length=32)
+
+
+class DiskOut(BaseModel):
+    name: str
+    percent_used: int
+
+
+class SystemOut(BaseModel):
+    """The admin's Server page: details the public health checks leave out."""
+
+    disks: list[DiskOut]
+    disk_alert_percent: int
+    backup_state: str
+    last_backup_at: datetime | None
+    last_backup_failure_at: datetime | None
+    started_at: datetime
+
+
+class AuditOut(BaseModel):
+    at: datetime
+    action: str
+    label: str
+    actor_email: str | None
+    target_email: str | None
+    detail: str | None
+
+
+class StorageOut(BaseModel):
+    used_bytes: int
+    quota_bytes: int
+
+
+class QuotaIn(BaseModel):
+    quota_mb: int | None = Field(default=None, ge=1, le=1_000_000)  # None: back to the default
+
+
+class InviteCheck(BaseModel):
+    valid: bool
+
+
+InviteStatus = Literal["pending", "used", "expired", "revoked"]
+
+
+class InviteIn(BaseModel):
+    email: str = Field(max_length=320)
+
+
+class InviteOut(ORMModel):
+    id: str
+    email: str
+    status: InviteStatus
+    created_at: datetime
+    expires_at: datetime
+    used_at: datetime | None
+
+
+class InviteCreated(InviteOut):
+    link: str  # shown once: only a hash of its secret is stored
+
+
+class AdminUserOut(BaseModel):
+    """What an admin may see about an account: never its records or files, only counts and sizes."""
+
+    id: str
+    email: str
+    name: str | None
+    is_admin: bool
+    disabled: bool
+    created_at: datetime
+    last_login_at: datetime | None
+    file_count: int
+    storage_bytes: int
+    quota_bytes: int
+    quota_is_default: bool
+
+
+class DeleteUserIn(BaseModel):
+    confirm_email: str = Field(max_length=320)

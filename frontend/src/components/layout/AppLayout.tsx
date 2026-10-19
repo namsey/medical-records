@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useMe } from '@/hooks/queries'
 import { LoadingState } from '../ui/feedback'
+import { ConsentPage } from '@/pages/ConsentPage'
 import { BottomNav } from './BottomNav'
 
 /** Wraps every private page: requires a login, then shows the page above the bottom navigation. */
@@ -20,6 +21,7 @@ export function AppLayout() {
     )
   }
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (user.needs_consent) return <ConsentPage />
 
   return (
     <div className="min-h-dvh">

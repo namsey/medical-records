@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly medical records backup (about 02:30 IST)
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Kolkata
+RandomizedDelaySec=10min
+# If the server was off at 02:30, run the backup as soon as it is back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

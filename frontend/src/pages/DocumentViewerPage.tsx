@@ -76,7 +76,14 @@ export function DocumentViewerPage() {
           <PdfViewer url={documentUrls.view(document.id)} zoom={zoom} />
         </Suspense>
       ) : (
-        <ImageViewer url={documentUrls.view(document.id)} alt={document.original_filename} zoom={zoom} />
+        <ImageViewer
+          url={documentUrls.view(document.id)}
+          alt={document.original_filename}
+          zoom={zoom}
+          unsupportedMessage={
+            document.content_type === 'image/heic' ? 'This browser cannot show HEIC photos. Use the download button above to open it on your device.' : undefined
+          }
+        />
       )}
 
       <ConfirmDialog

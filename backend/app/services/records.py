@@ -14,7 +14,6 @@ from app.models import (
     record_tags,
 )
 from app.schemas import RECORD_TYPE_LABELS, RecordIn, RecordSummary, RecordType, TimelineItem
-from app.services import storage
 
 SCALAR_FIELDS = (
     "hospital",
@@ -50,9 +49,12 @@ LIST_LOAD = (
 )
 
 
-def get_record_or_404(db: Session, record_id: str, *, full: bool = True) -> MedicalRecord:
+def get_record_or_404(db: Session, user_id: str, record_id: str, *, full: bool = True) -> MedicalRecord:
+    """The user's record, or 404 (also when it belongs to someone else)."""
     options = FULL_LOAD if full else LIST_LOAD
-    record = db.scalar(select(MedicalRecord).where(MedicalRecord.id == record_id).options(*options))
+    record = db.scalar(
+        select(MedicalRecord).where(MedicalRecord.id == record_id, MedicalRecord.user_id == user_id).options(*options)
+    )
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
     return record
@@ -79,18 +81,19 @@ def _sync_tags(db: Session, record: MedicalRecord, names: list[str]) -> None:
     tags: list[Tag] = []
     for name in names:
         key = name.lower()
-        tag = db.scalar(select(Tag).where(Tag.name_key == key))
+        tag = db.scalar(select(Tag).where(Tag.user_id == record.user_id, Tag.name_key == key))
         if tag is None:
-            tag = Tag(name=name, name_key=key)
+            tag = Tag(user_id=record.user_id, name=name, name_key=key)
             db.add(tag)
             db.flush()
         tags.append(tag)
     record.tags = tags
 
 
-def remove_orphan_tags(db: Session) -> None:
+def remove_orphan_tags(db: Session, user_id: str) -> None:
+    """Delete the user's tags that no record uses any more."""
     used = select(record_tags.c.tag_id)
-    db.execute(delete(Tag).where(Tag.id.not_in(used)))
+    db.execute(delete(Tag).where(Tag.user_id == user_id, Tag.id.not_in(used)))
 
 
 def apply_payload(db: Session, record: MedicalRecord, payload: RecordIn) -> None:
@@ -98,9 +101,10 @@ def apply_payload(db: Session, record: MedicalRecord, payload: RecordIn) -> None
     doctor = None
     if payload.doctor_id:
         doctor = db.get(Doctor, payload.doctor_id)
-        if doctor is None:
+        if doctor is None or doctor.user_id != record.user_id:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Selected doctor does not exist")
-    if payload.lab_id and db.get(Lab, payload.lab_id) is None:
+    lab = db.get(Lab, payload.lab_id) if payload.lab_id else None
+    if payload.lab_id and (lab is None or lab.user_id != record.user_id):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Selected laboratory does not exist")
 
     record.record_type = payload.record_type.value
@@ -121,31 +125,32 @@ def apply_payload(db: Session, record: MedicalRecord, payload: RecordIn) -> None
     _sync_tags(db, record, payload.tags)
 
 
-def create_record(db: Session, payload: RecordIn) -> MedicalRecord:
-    record = MedicalRecord()
+def create_record(db: Session, user_id: str, payload: RecordIn) -> MedicalRecord:
+    record = MedicalRecord(user_id=user_id)
     apply_payload(db, record, payload)
     db.add(record)
     db.flush()
     db.commit()
-    return get_record_or_404(db, record.id)
+    return get_record_or_404(db, user_id, record.id)
 
 
 def update_record(db: Session, record: MedicalRecord, payload: RecordIn) -> MedicalRecord:
     apply_payload(db, record, payload)
     db.flush()
-    remove_orphan_tags(db)
+    remove_orphan_tags(db, record.user_id)
     db.commit()
-    return get_record_or_404(db, record.id)
+    return get_record_or_404(db, record.user_id, record.id)
 
 
-def delete_record(db: Session, record: MedicalRecord) -> None:
-    files = [storage.stored_path(document) for document in record.documents]
+def delete_record(db: Session, record: MedicalRecord) -> list[str]:
+    """Delete the record and its children. Returns the stored names of its files, for the caller to remove."""
+    stored_names = [document.stored_filename for document in record.documents]
+    user_id = record.user_id
     db.delete(record)
     db.flush()
-    remove_orphan_tags(db)
+    remove_orphan_tags(db, user_id)
     db.commit()
-    for path in files:
-        storage.remove_file(path)
+    return stored_names
 
 
 def to_summary(record: MedicalRecord) -> RecordSummary:

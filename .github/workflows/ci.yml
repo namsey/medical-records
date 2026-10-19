@@ -93,3 +93,27 @@ jobs:
             frontend/playwright-report/
             frontend/test-results/
           retention-days: 14
+
+  backup:
+    name: Backup scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q restic shellcheck
+          pip install -r backend/requirements-dev.txt
+      - name: Lint
+        run: |
+          shellcheck -x -P SCRIPTDIR scripts/*.sh
+          ruff check scripts --config backend/ruff.toml
+      - name: Backup, restore, home copy and retention tests (local restic repositories)
+        run: scripts/test-backup.sh
+        env:
+          PYTHON: python

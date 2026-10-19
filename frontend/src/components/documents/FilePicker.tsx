@@ -1,20 +1,21 @@
 import { Camera, FileText, Image as ImageIcon, Paperclip, X } from 'lucide-react'
 import { useRef, useState, type ChangeEvent } from 'react'
-import { useAppConfig } from '@/hooks/queries'
+import { useAppConfig, useStorageUse } from '@/hooks/queries'
 import { formatFileSize } from '@/lib/format'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 
-const ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp'
-const FALLBACK_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.webp']
+const ACCEPT = '.pdf,.jpg,.jpeg,.png,.heic,.heif,application/pdf,image/jpeg,image/png,image/heic,image/heif'
+const FALLBACK_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.heic', '.heif']
 
 /** Returns a message if the file cannot be uploaded, otherwise null. The server checks everything again. */
-export function checkFile(file: File, maxMb: number, extensions: string[]): string | null {
+export function checkFile(file: File, maxMb: number, extensions: string[], spaceLeft = Infinity): string | null {
   const dot = file.name.lastIndexOf('.')
   const extension = dot >= 0 ? file.name.slice(dot).toLowerCase() : ''
-  if (extension && !extensions.includes(extension)) return `${file.name}: only PDF, JPG, PNG and WEBP files are allowed.`
+  if (extension && !extensions.includes(extension)) return `${file.name}: only PDF, JPG, PNG and HEIC files are allowed.`
   if (file.size === 0) return `${file.name}: the file is empty.`
   if (file.size > maxMb * 1024 * 1024) return `${file.name}: larger than ${maxMb} MB.`
+  if (file.size > spaceLeft) return `${file.name}: not enough storage left (${formatFileSize(Math.max(spaceLeft, 0))} free).`
   return null
 }
 
@@ -30,6 +31,7 @@ export function FilePicker({ files, onChange, label = 'Attachments', disabled }:
   const { data: config } = useAppConfig()
   const maxMb = config?.max_upload_mb ?? 20
   const extensions = config?.allowed_extensions ?? FALLBACK_EXTENSIONS
+  const { data: storage } = useStorageUse()
   const filesInput = useRef<HTMLInputElement>(null)
   const cameraInput = useRef<HTMLInputElement>(null)
   const [problems, setProblems] = useState<string[]>([])
@@ -38,9 +40,12 @@ export function FilePicker({ files, onChange, label = 'Attachments', disabled }:
     const chosen = Array.from(event.target.files ?? [])
     event.target.value = '' // allow choosing the same file again later
     const rejected: string[] = []
+    // Space left after the files already chosen for this record.
+    let spaceLeft = storage ? storage.quota_bytes - storage.used_bytes - files.reduce((sum, file) => sum + file.size, 0) : Infinity
     const accepted = chosen.filter((file) => {
-      const problem = checkFile(file, maxMb, extensions)
+      const problem = checkFile(file, maxMb, extensions, spaceLeft)
       if (problem) rejected.push(problem)
+      else spaceLeft -= file.size
       return !problem
     })
     setProblems(rejected)
@@ -48,7 +53,7 @@ export function FilePicker({ files, onChange, label = 'Attachments', disabled }:
   }
 
   return (
-    <Field label={label} hint={`PDF, JPG, PNG or WEBP, up to ${maxMb} MB each.`}>
+    <Field label={label} hint={`PDF, JPG, PNG or HEIC (iPhone photos), up to ${maxMb} MB each.`}>
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <Button variant="secondary" disabled={disabled} onClick={() => filesInput.current?.click()}>

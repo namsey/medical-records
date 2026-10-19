@@ -10,6 +10,71 @@ export type RecordType =
 export interface User {
   email: string
   name: string | null
+  is_admin: boolean
+  /** Has not agreed to the current privacy notice yet. */
+  needs_consent: boolean
+}
+
+export interface PrivacyInfo {
+  version: string
+  grievance_name: string
+  grievance_email: string
+}
+
+/** The admin's Server page. */
+export interface SystemInfo {
+  disks: { name: string; percent_used: number }[]
+  disk_alert_percent: number
+  backup_state: 'ok' | 'backup_failed' | 'backup_missing' | 'not_monitored'
+  last_backup_at: string | null
+  last_backup_failure_at: string | null
+  started_at: string
+}
+
+/** One audit log entry: account events only, never record contents. */
+export interface AuditEntry {
+  at: string
+  action: string
+  label: string
+  actor_email: string | null
+  target_email: string | null
+  detail: string | null
+}
+
+export type InviteStatus = 'pending' | 'used' | 'expired' | 'revoked'
+
+export interface Invite {
+  id: string
+  email: string
+  status: InviteStatus
+  created_at: string
+  expires_at: string
+  used_at: string | null
+}
+
+/** Only the response that creates an invite has its link: the server keeps just a hash of it. */
+export interface CreatedInvite extends Invite {
+  link: string
+}
+
+/** What the admin sees about an account: counts and sizes, never records or files. */
+export interface AdminUser {
+  id: string
+  email: string
+  name: string | null
+  is_admin: boolean
+  disabled: boolean
+  created_at: string
+  last_login_at: string | null
+  file_count: number
+  storage_bytes: number
+  quota_bytes: number
+  quota_is_default: boolean
+}
+
+export interface StorageUse {
+  used_bytes: number
+  quota_bytes: number
 }
 
 export interface Doctor {

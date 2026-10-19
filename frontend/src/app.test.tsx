@@ -18,8 +18,8 @@ describe('authentication', () => {
 
   it('explains why a sign-in was refused', async () => {
     mockApi({ 'GET /api/auth/me': () => ({ status: 401, json: {} }) })
-    renderApp('/login?error=not_allowed')
-    expect(await screen.findByRole('alert')).toHaveTextContent(/not allowed/i)
+    renderApp('/login?error=not_invited')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/has no invite/i)
   })
 
   it('leaves the login page once signed in', async () => {
@@ -294,13 +294,30 @@ describe('adding a record', () => {
   })
 
   it('rejects unsupported attachments before uploading', async () => {
-    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 1, allowed_extensions: ['.pdf', '.jpg', '.jpeg', '.png', '.webp'] } })
+    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 1, allowed_extensions: ['.pdf', '.jpg', '.jpeg', '.png', '.heic', '.heif'] } })
     renderApp('/add/doctor_visit')
     const input = (await screen.findByText('Choose files')).closest('div')!.parentElement!.querySelector('input[type=file]') as HTMLInputElement
     const user = userEvent.setup({ applyAccept: false })
     await user.upload(input, [new File(['x'], 'notes.txt', { type: 'text/plain' }), new File(['%PDF'], 'ok.pdf', { type: 'application/pdf' })])
     expect(await screen.findByRole('alert')).toHaveTextContent('notes.txt')
     expect(screen.getByText('ok.pdf')).toBeInTheDocument()
+  })
+
+  it('accepts iPhone HEIC photos and refuses files that would not fit in the storage left', async () => {
+    mockApi({
+      ...authed,
+      'GET /api/doctors': [],
+      'GET /api/tags': [],
+      'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf', '.jpg', '.jpeg', '.png', '.heic', '.heif'] },
+      'GET /api/storage': { used_bytes: 100 * 1024 * 1024 - 1500, quota_bytes: 100 * 1024 * 1024 },
+    })
+    renderApp('/add/doctor_visit')
+    expect(await screen.findByText(/PDF, JPG, PNG or HEIC/)).toBeInTheDocument()
+    const input = (await screen.findByText('Choose files')).closest('div')!.parentElement!.querySelector('input[type=file]') as HTMLInputElement
+    const user = userEvent.setup({ applyAccept: false })
+    await user.upload(input, [new File(['x'.repeat(1000)], 'photo.heic', { type: 'image/heic' }), new File(['x'.repeat(1000)], 'second.pdf', { type: 'application/pdf' })])
+    expect(await screen.findByRole('alert')).toHaveTextContent('second.pdf: not enough storage left (500 B free).')
+    expect(screen.getByText('photo.heic')).toBeInTheDocument()
   })
 
   it('closes an untouched form without asking', async () => {
@@ -548,23 +565,277 @@ describe('profile', () => {
     expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /timeline/i })).toHaveAttribute('href', '/timeline')
     expect(screen.getByRole('link', { name: /doctors/i })).toHaveAttribute('href', '/doctors')
-    expect(screen.getByRole('link', { name: /full backup/i })).toHaveAttribute('href', '/api/backup')
+    expect(screen.getByRole('link', { name: /download my data/i })).toHaveAttribute('href', '/api/account/export')
     expect(screen.getByRole('link', { name: /export records/i })).toHaveAttribute('href', '/api/export/json')
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
     expect(screen.getByText(/naman@example\.com/)).toBeInTheDocument()
   })
 
   it('signs out', async () => {
     const calls = mockApi({ ...authed, 'POST /api/auth/logout': { ok: true } })
     renderApp('/profile')
-    await userEvent.click(await screen.findByRole('button', { name: /sign out/i }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }))
     expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument()
     expect(calls.some((c) => c.method === 'POST' && c.path === '/api/auth/logout')).toBe(true)
+  })
+
+  it('shows how much storage is used', async () => {
+    mockApi({ ...authed, 'GET /api/storage': { used_bytes: 95 * 1024 * 1024, quota_bytes: 100 * 1024 * 1024 } })
+    renderApp('/profile')
+    expect(await screen.findByText('95.0 MB of 100.0 MB used')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: 'Storage used' })).toHaveAttribute('aria-valuenow', '95')
+    expect(screen.getByText(/almost full/i)).toBeInTheDocument()
+  })
+
+  it('signs out of all devices after confirming', async () => {
+    const calls = mockApi({ ...authed, 'POST /api/auth/logout-all': { ok: true } })
+    renderApp('/profile')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /sign out of all devices/i }))
+    const dialog = await screen.findByRole('dialog', { name: 'Sign out of all devices?' })
+    expect(calls.some((c) => c.path === '/api/auth/logout-all')).toBe(false)
+    await user.click(within(dialog).getByRole('button', { name: 'Sign out everywhere' }))
+    expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument()
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/api/auth/logout-all')).toBe(true)
+  })
+
+  it('explains a sign-in refused for too many attempts', async () => {
+    mockApi({ 'GET /api/auth/me': () => ({ status: 401, json: {} }) })
+    renderApp('/login?error=rate_limited')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/too many sign-in attempts/i)
   })
 
   it('redirects the old /more address to Profile', async () => {
     mockApi(authed)
     renderApp('/more')
     expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
+  })
+})
+
+describe('invites', () => {
+  const signedOut = { 'GET /api/auth/me': () => ({ status: 401, json: {} }) }
+
+  it('lets an invited person sign in with the invite', async () => {
+    mockApi({ ...signedOut, 'GET /api/auth/invite/secret123': { valid: true } })
+    renderApp('/invite/secret123')
+    expect(await screen.findByRole('link', { name: /sign in with google/i })).toHaveAttribute('href', '/api/auth/login?invite=secret123')
+    expect(screen.getByText(/the link works once/i)).toBeInTheDocument()
+  })
+
+  it('explains an invite link that no longer works', async () => {
+    mockApi({ ...signedOut, 'GET /api/auth/invite/old': { valid: false } })
+    renderApp('/invite/old')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/expired, was already used or was revoked/i)
+    expect(screen.queryByRole('link', { name: /sign in with google/i })).not.toBeInTheDocument()
+  })
+
+  it('explains each refused sign-in', async () => {
+    mockApi(signedOut)
+    renderApp('/login?error=invite_wrong_account')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/different Google account/i)
+  })
+})
+
+describe('admin', () => {
+  const ADMIN = { ...USER, is_admin: true }
+  const admin = { 'GET /api/auth/me': ADMIN }
+  const invite = { id: 'i1', email: 'friend@example.com', status: 'pending', created_at: '2026-10-19T10:00:00Z', expires_at: '2026-10-26T10:00:00Z', used_at: null }
+  const accounts = [
+    { id: 'u1', email: 'naman@example.com', name: 'Naman', is_admin: true, disabled: false, created_at: '2026-01-01T00:00:00Z', last_login_at: '2026-10-19T09:00:00Z', file_count: 0, storage_bytes: 0, quota_bytes: 100 * 1024 * 1024, quota_is_default: true },
+    { id: 'u2', email: 'friend@example.com', name: 'Friend', is_admin: false, disabled: false, created_at: '2026-10-19T00:00:00Z', last_login_at: null, file_count: 3, storage_bytes: 3 * 1024 * 1024, quota_bytes: 100 * 1024 * 1024, quota_is_default: true },
+  ]
+
+  it('is linked from Profile only for the admin', async () => {
+    mockApi(admin)
+    renderApp('/profile')
+    expect(await screen.findByRole('link', { name: /admin/i })).toHaveAttribute('href', '/admin')
+  })
+
+  it('is hidden from everyone else', async () => {
+    mockApi(authed)
+    renderApp('/profile')
+    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /admin/i })).not.toBeInTheDocument()
+  })
+
+  it('shows the not-found page to a non-admin who opens it', async () => {
+    const calls = mockApi(authed)
+    renderApp('/admin')
+    expect(await screen.findByRole('heading', { name: /not found/i })).toBeInTheDocument()
+    expect(calls.some((c) => c.path.startsWith('/api/admin'))).toBe(false)
+  })
+
+  it('creates an invite and shows its link once, ready to copy', async () => {
+    const calls = mockApi({
+      ...admin,
+      'GET /api/admin/invites': [],
+      'GET /api/admin/users': accounts,
+      'POST /api/admin/invites': () => ({ status: 201, json: { ...invite, link: 'https://records.example/invite/secret123' } }),
+    })
+    renderApp('/admin')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Email address'), 'friend@example.com')
+    await user.click(screen.getByRole('button', { name: /create invite link/i }))
+    expect(await screen.findByLabelText('Invite link')).toHaveValue('https://records.example/invite/secret123')
+    expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ email: 'friend@example.com' })
+    await user.click(screen.getByRole('button', { name: /copy link/i }))
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument()
+    // userEvent stands in for the system clipboard.
+    expect(await navigator.clipboard.readText()).toBe('https://records.example/invite/secret123')
+  })
+
+  it('revokes a pending invite after confirming', async () => {
+    const calls = mockApi({
+      ...admin,
+      'GET /api/admin/invites': [invite],
+      'GET /api/admin/users': accounts,
+      'POST /api/admin/invites/i1/revoke': { ...invite, status: 'revoked' },
+    })
+    renderApp('/admin')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Revoke invite for friend@example.com' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Revoke this invite?' })).getByRole('button', { name: 'Revoke' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.path === '/api/admin/invites/i1/revoke')).toBe(true))
+  })
+
+  it('lists accounts with storage, and disables one', async () => {
+    const calls = mockApi({ ...admin, 'GET /api/admin/invites': [], 'GET /api/admin/users': accounts, 'POST /api/admin/users/u2/disable': () => ({ status: 204 }) })
+    renderApp('/admin')
+    expect(await screen.findByText(paragraph('Never signed in · 3 files · 3.0 MB of 100.0 MB'))).toBeInTheDocument()
+    // The admin's own account has no disable or delete buttons.
+    expect(screen.queryByRole('button', { name: 'Disable naman@example.com' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Disable friend@example.com' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.path === '/api/admin/users/u2/disable')).toBe(true))
+  })
+
+  it('changes an account storage limit', async () => {
+    const calls = mockApi({ ...admin, 'GET /api/admin/invites': [], 'GET /api/admin/users': accounts, 'PUT /api/admin/users/u2/quota': () => ({ status: 204 }) })
+    renderApp('/admin')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Change storage limit for friend@example.com' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Storage limit' })
+    expect(within(dialog).getByRole('button', { name: 'Use default' })).toBeDisabled()
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('New limit in MB'), '250')
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT')?.body).toEqual({ quota_mb: 250 }))
+  })
+
+  it('deletes an account only after its email is typed', async () => {
+    const calls = mockApi({ ...admin, 'GET /api/admin/invites': [], 'GET /api/admin/users': accounts, 'POST /api/admin/users/u2/delete': () => ({ status: 204 }) })
+    renderApp('/admin')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Delete friend@example.com' }))
+    const dialog = () => screen.getByRole('dialog', { name: 'Delete this account?' })
+    const confirm = () => within(dialog()).getByRole('button', { name: 'Delete' })
+    const input = () => within(dialog()).getByLabelText('Type the email to confirm')
+    await screen.findByRole('dialog', { name: 'Delete this account?' })
+    expect(confirm()).toBeDisabled()
+    await user.type(input(), 'friend@example')
+    expect(input()).toHaveValue('friend@example')
+    expect(confirm()).toBeDisabled()
+    await user.clear(input())
+    await user.type(input(), 'Friend@Example.com')
+    expect(input()).toHaveValue('Friend@Example.com')
+    expect(confirm()).toBeEnabled()
+    await user.click(confirm())
+    await waitFor(() => expect(calls.map((c) => c.path)).toContain('/api/admin/users/u2/delete'))
+    expect(calls.find((c) => c.path === '/api/admin/users/u2/delete')!.body).toEqual({ confirm_email: 'Friend@Example.com' })
+  })
+})
+
+describe('privacy', () => {
+  const privacy = { 'GET /api/auth/privacy': { version: '2026-10', grievance_name: 'Naman', grievance_email: 'privacy@example.com' } }
+
+  it('asks for consent before anything else, and continues once given', async () => {
+    let consented = false
+    const calls = mockApi({
+      ...privacy,
+      'GET /api/auth/me': () => ({ json: { ...USER, needs_consent: !consented } }),
+      'POST /api/account/consent': () => {
+        consented = true
+        return { status: 204 }
+      },
+      'GET /api/records': emptyPage,
+    })
+    renderApp('/')
+    expect(await screen.findByRole('heading', { name: 'Before you start' })).toBeInTheDocument()
+    expect(screen.getByText(/one server in India \(Oracle Cloud, Mumbai\)/)).toBeInTheDocument()
+    expect(await screen.findByText((_, el) => el?.tagName === 'LI' && Boolean(el.textContent?.includes('contact Naman (privacy@example.com)')))).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'I agree' }))
+    expect(await screen.findByText('No records yet')).toBeInTheDocument()
+    expect(calls.find((c) => c.path === '/api/account/consent')!.body).toEqual({ version: '2026-10' })
+  })
+
+  it('shows the privacy notice without signing in, linked from the login page', async () => {
+    mockApi({ ...privacy, 'GET /api/auth/me': () => ({ status: 401, json: {} }) })
+    renderApp('/login')
+    expect(await screen.findByRole('link', { name: 'Privacy notice' })).toHaveAttribute('href', '/privacy')
+    renderApp('/privacy')
+    expect(await screen.findByRole('heading', { name: 'Privacy notice' })).toBeInTheDocument()
+    expect(screen.getAllByText(/Data Protection Board of India/).length).toBeGreaterThan(0)
+  })
+
+  it('shows the grievance contact on Profile and deletes the account after the email is typed', async () => {
+    const calls = mockApi({ ...authed, ...privacy, 'POST /api/account/delete': { ok: true } })
+    renderApp('/profile')
+    expect(await screen.findByRole('link', { name: 'privacy@example.com' })).toHaveAttribute('href', 'mailto:privacy@example.com')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Delete my account' }))
+    const dialog = () => screen.getByRole('dialog', { name: 'Delete my account?' })
+    expect(within(dialog()).getByText(/within 6 months/)).toBeInTheDocument()
+    const confirm = () => within(dialog()).getByRole('button', { name: 'Delete' })
+    expect(confirm()).toBeDisabled()
+    await user.type(within(dialog()).getByLabelText('Type your email to confirm'), 'Naman@Example.com')
+    await user.click(confirm())
+    expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument()
+    expect(calls.find((c) => c.path === '/api/account/delete')!.body).toEqual({ confirm_email: 'Naman@Example.com' })
+  })
+
+  it('does not offer the admin a way to delete their own account', async () => {
+    mockApi({ 'GET /api/auth/me': { ...USER, is_admin: true }, ...privacy })
+    renderApp('/profile')
+    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete my account' })).not.toBeInTheDocument()
+  })
+
+  it('shows the server status to the admin', async () => {
+    mockApi({
+      'GET /api/auth/me': { ...USER, is_admin: true },
+      'GET /api/admin/invites': [],
+      'GET /api/admin/users': [],
+      'GET /api/admin/audit': [],
+      'GET /api/admin/system': {
+        disks: [{ name: 'data', percent_used: 85 }, { name: 'system', percent_used: 30 }],
+        disk_alert_percent: 80,
+        backup_state: 'backup_failed',
+        last_backup_at: '2026-10-18T21:05:00Z',
+        last_backup_failure_at: '2026-10-19T21:04:00Z',
+        started_at: '2026-10-19T08:00:00Z',
+      },
+    })
+    renderApp('/admin')
+    expect(await screen.findByRole('progressbar', { name: 'Data disk' })).toHaveAttribute('aria-valuenow', '85')
+    expect(screen.getByText('85% used')).toHaveClass('text-danger-700')
+    expect(screen.getByText('30% used')).not.toHaveClass('text-danger-700')
+    expect(screen.getByText('Last backup failed')).toBeInTheDocument()
+    expect(screen.getByText(/Last failed backup:/)).toBeInTheDocument()
+  })
+
+  it('lists account activity for the admin', async () => {
+    mockApi({
+      'GET /api/auth/me': { ...USER, is_admin: true },
+      'GET /api/admin/invites': [],
+      'GET /api/admin/users': [],
+      'GET /api/admin/audit': [
+        { at: '2026-10-19T08:32:00Z', action: 'sign_in_refused', label: 'Sign-in refused', actor_email: null, target_email: null, detail: 'not_invited' },
+        { at: '2026-10-19T08:30:00Z', action: 'invite_created', label: 'Invite created', actor_email: 'naman@example.com', target_email: 'friend@example.com', detail: null },
+      ],
+    })
+    renderApp('/admin')
+    expect(await screen.findByText('Invite created')).toBeInTheDocument()
+    expect(screen.getByText(/by naman@example\.com · friend@example\.com/)).toBeInTheDocument()
+    expect(screen.getByText(/· not invited/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show older' })).not.toBeInTheDocument()
   })
 })

@@ -2,12 +2,11 @@
 
 from fastapi import APIRouter, Depends, Response
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
-from app.database import get_db
 from app.security import private_dependencies
 from app.services import backup
+from app.services.record_store import RecordStore, get_record_store
 
 router = APIRouter(prefix="/api", tags=["backup"], dependencies=private_dependencies)
 
@@ -15,9 +14,9 @@ DOWNLOAD_HEADERS = {"Cache-Control": "private, no-store", "X-Content-Type-Option
 
 
 @router.get("/backup")
-def download_backup() -> FileResponse:
-    """ZIP containing the SQLite database and every uploaded file."""
-    archive = backup.create_backup_zip()
+def download_backup(store: RecordStore = Depends(get_record_store)) -> FileResponse:
+    """ZIP with a copy of the database holding only the signed-in user's data, and that user's files."""
+    archive = store.backup_zip()
     return FileResponse(
         archive,
         media_type="application/zip",
@@ -28,10 +27,10 @@ def download_backup() -> FileResponse:
 
 
 @router.get("/export/json")
-def export_json(db: Session = Depends(get_db)) -> Response:
-    """All structured records (doctors, laboratories, records with medicines / results / tags / document metadata)."""
+def export_json(store: RecordStore = Depends(get_record_store)) -> Response:
+    """The signed-in user's doctors, laboratories and records (with medicines / results / tags / document metadata)."""
     return Response(
-        content=backup.build_json_export(db),
+        content=store.export_json(),
         media_type="application/json",
         headers={
             **DOWNLOAD_HEADERS,

@@ -2,7 +2,7 @@
 
 Run by Playwright's webServer (see playwright.config.ts); it serves the production build from frontend/dist.
 
-1. Wipes E2E_DATA_DIR and points the app's database and upload folder at it (never at your real data/).
+1. Wipes E2E_DATA_DIR and points the app's database and files folder at it (never at your real data/).
 2. Runs the migrations and creates a login session for the allowed account, the same way the backend tests do,
    and writes it as a Playwright storage state file (E2E_STATE_FILE). The app's Google-only sign-in is unchanged:
    no test-only login route exists in the app.
@@ -34,9 +34,10 @@ os.environ.update(
         "GOOGLE_CLIENT_ID": "e2e-client-id",
         "GOOGLE_CLIENT_SECRET": "e2e-client-secret",
         "GOOGLE_REDIRECT_URI": f"http://127.0.0.1:{PORT}/api/auth/callback",
-        "ALLOWED_EMAIL": EMAIL,
+        "ADMIN_EMAIL": EMAIL,
         "SESSION_SECRET": "e2e-session-secret-e2e-session-secret-1234",
         "DATABASE_URL": f"sqlite:///{DATA_DIR / 'e2e.db'}",
+        "FILES_DIR": str(DATA_DIR / "files"),
         "UPLOAD_DIR": str(DATA_DIR / "uploads"),
     }
 )
@@ -46,11 +47,15 @@ import uvicorn  # noqa: E402
 
 from app.database import SessionLocal  # noqa: E402
 from app.migrations import run_migrations  # noqa: E402
+from app.privacy import PRIVACY_VERSION  # noqa: E402
 from app.services import sessions  # noqa: E402
 
 run_migrations()
 with SessionLocal() as db:
-    token = sessions.create_session(db, sessions.get_or_create_user(db, EMAIL, "E2E"))
+    user = sessions.get_or_create_user(db, EMAIL, "E2E")
+    user.consent_version = PRIVACY_VERSION  # the core flows start after the privacy notice was accepted
+    db.commit()
+    token = sessions.create_session(db, user)
 
 STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 STATE_FILE.write_text(

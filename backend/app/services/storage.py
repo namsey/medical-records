@@ -1,58 +1,62 @@
-"""Local-filesystem storage for uploaded documents.
+"""FileStore: where uploaded documents live on disk.
 
-Files are stored under UPLOAD_DIR/<folder>/<uuid>.<ext>. The original file name only lives in the database
+Files are stored as FILES_DIR/<user_id>/<uuid>.<ext>. The original file name only lives in the database
 (sanitised); the stored name is generated, so user input never becomes part of a filesystem path.
+
+Older versions stored files as UPLOAD_DIR/<type folder>/<uuid>.<ext>; `relocate_legacy_files` moves them
+into the per-user layout at startup.
 """
 
+import errno
 import logging
 import os
 import re
+import shutil
 import uuid
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
 
 from app.config import get_settings
 from app.models import Document, MedicalRecord
+from app.services import virus_scan
 
 logger = logging.getLogger(__name__)
 
-# content type -> canonical extension
+# What can be uploaded: content type -> canonical extension. (WEBP files stored before #42 are still served.)
 ALLOWED_TYPES: dict[str, str] = {
     "application/pdf": ".pdf",
     "image/jpeg": ".jpg",
     "image/png": ".png",
-    "image/webp": ".webp",
+    "image/heic": ".heic",
 }
 ALLOWED_EXTENSIONS: dict[str, str] = {
     ".pdf": "application/pdf",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".png": "image/png",
-    ".webp": "image/webp",
+    ".heic": "image/heic",
+    ".heif": "image/heic",
 }
+ALLOWED_LABEL = "PDF, JPG, PNG, HEIC"
+# ISO-BMFF brands of HEIC/HEIF photos (iPhone camera). AVIF uses the same container and is not accepted.
+HEIC_BRANDS = {b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx"}
+HEIF_GENERIC_BRANDS = {b"mif1", b"msf1"}
+SNIFF_BYTES = 64
 
-TYPE_FOLDERS: dict[str, str] = {
-    "prescription": "prescriptions",
-    "lab_report": "lab_reports",
-    "medical_document": "medical_documents",
-    "scan": "scans",
-    "doctor_visit": "other",
-    "diagnosis": "other",
-    "other": "other",
-}
-ALL_FOLDERS = {"prescriptions", "lab_reports", "medical_documents", "scans", "other"}
+# Type folders of the old UPLOAD_DIR layout, only read when moving files to the per-user layout.
+LEGACY_FOLDERS = {"prescriptions", "lab_reports", "medical_documents", "scans", "other"}
 
-_STORED_NAME_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png|webp)$")
+_STORED_NAME_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png|webp|heic)$")
+_USER_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 CHUNK_SIZE = 1024 * 1024
-
-
-def ensure_storage_dirs() -> None:
-    base = get_settings().upload_path
-    for folder in ALL_FOLDERS:
-        (base / folder).mkdir(parents=True, exist_ok=True)
 
 
 def sniff_content_type(head: bytes) -> str | None:
@@ -65,7 +69,21 @@ def sniff_content_type(head: bytes) -> str | None:
         return "image/png"
     if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
         return "image/webp"
+    if _is_heic(head):
+        return "image/heic"
     return None
+
+
+def _is_heic(head: bytes) -> bool:
+    """An ISO-BMFF `ftyp` box whose brands say HEIC/HEIF (and not AVIF)."""
+    if len(head) < 16 or head[4:8] != b"ftyp":
+        return False
+    box_size = int.from_bytes(head[:4], "big")
+    major = head[8:12]
+    compatible = {head[i : i + 4] for i in range(16, min(box_size, len(head)) - 3, 4)}
+    if b"avif" in compatible or major == b"avif":
+        return False
+    return major in HEIC_BRANDS or (major in HEIF_GENERIC_BRANDS and bool(compatible & HEIC_BRANDS))
 
 
 def sanitize_filename(raw: str | None) -> str:
@@ -78,21 +96,6 @@ def sanitize_filename(raw: str | None) -> str:
     return name or "document"
 
 
-def folder_for(record_type: str) -> str:
-    return TYPE_FOLDERS.get(record_type, "other")
-
-
-def stored_path(document: Document) -> Path:
-    """Absolute path of a document's file, guaranteed to be inside the upload directory."""
-    base = get_settings().upload_path
-    if document.storage_folder not in ALL_FOLDERS or not _STORED_NAME_RE.match(document.stored_filename):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
-    candidate = (base / document.storage_folder / document.stored_filename).resolve()
-    if not candidate.is_relative_to(base):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
-    return candidate
-
-
 def remove_file(path: Path) -> None:
     try:
         path.unlink(missing_ok=True)
@@ -100,70 +103,215 @@ def remove_file(path: Path) -> None:
         logger.warning("Could not remove a stored file (%s)", path.name)
 
 
-async def save_upload(upload: UploadFile, record: MedicalRecord) -> Document:
-    """Validate and store one uploaded file; returns an unsaved Document row. Raises HTTPException."""
-    settings = get_settings()
-    max_bytes = settings.max_upload_bytes
-    display_name = sanitize_filename(upload.filename)
-
-    head = await upload.read(16)
+async def _validated_type(upload: UploadFile, display_name: str) -> tuple[str, str]:
+    """The real content type (from the file's first bytes) and the display name, with an extension added if needed."""
+    head = await upload.read(SNIFF_BYTES)
     await upload.seek(0)
     content_type = sniff_content_type(head)
-    if content_type is None:
+    if content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"'{display_name}' is not a supported file. Allowed types: PDF, JPG, JPEG, PNG, WEBP.",
+            detail=f"'{display_name}' is not a supported file. Allowed types: {ALLOWED_LABEL}.",
         )
     extension = Path(display_name).suffix.lower()
     if extension:
         if extension not in ALLOWED_EXTENSIONS:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=f"'{display_name}' has an unsupported file extension. Allowed: PDF, JPG, JPEG, PNG, WEBP.",
+                detail=f"'{display_name}' has an unsupported file extension. Allowed: {ALLOWED_LABEL}.",
             )
         if ALLOWED_EXTENSIONS[extension] != content_type:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail=f"'{display_name}' does not match its file extension.",
             )
-    else:
-        display_name = f"{display_name}{ALLOWED_TYPES[content_type]}"
+        return content_type, display_name
+    return content_type, f"{display_name}{ALLOWED_TYPES[content_type]}"
 
-    folder = folder_for(record.record_type)
-    stored_name = f"{uuid.uuid4()}{ALLOWED_TYPES[content_type]}"
-    destination = settings.upload_path / folder / stored_name
-    destination.parent.mkdir(parents=True, exist_ok=True)
 
-    size = 0
+class NotEnoughSpace(Exception):
+    """The file is bigger than the space left in the account."""
+
+    def __init__(self, display_name: str) -> None:
+        super().__init__(display_name)
+        self.display_name = display_name
+
+
+@dataclass
+class StoredFile:
+    stored_name: str
+    display_name: str
+    content_type: str
+    size_bytes: int
+
+
+class FileStore(Protocol):
+    async def save(self, user_id: str, upload: UploadFile, space_left: int | None = None) -> StoredFile:
+        """Validate and store one uploaded file. Raises HTTPException, or NotEnoughSpace when it is bigger than
+        `space_left` bytes, and then stores nothing."""
+        ...
+
+    def path(self, user_id: str, stored_name: str) -> Path:
+        """Where the file is (it may be missing). Raises a 404 HTTPException for a name the store never makes."""
+        ...
+
+    def delete(self, user_id: str, stored_name: str) -> None: ...
+
+    def iter_files(self, user_id: str) -> Iterator[tuple[Path, str]]:
+        """Every file of the user as (absolute path, path relative to the store), for backups."""
+        ...
+
+    def delete_user_files(self, user_id: str) -> None:
+        """Remove every file of a deleted account."""
+        ...
+
+
+class LocalFileStore:
+    def __init__(self, base: Path) -> None:
+        self.base = base
+
+    def safe_path(self, user_id: str, stored_name: str) -> Path | None:
+        if not _USER_ID_RE.match(user_id) or not _STORED_NAME_RE.match(stored_name):
+            return None
+        candidate = (self.base / user_id / stored_name).resolve()
+        return candidate if candidate.is_relative_to(self.base) else None
+
+    def path(self, user_id: str, stored_name: str) -> Path:
+        path = self.safe_path(user_id, stored_name)
+        if path is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        return path
+
+    def user_dir(self, user_id: str) -> Path:
+        folder = self.base / user_id
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        return folder
+
+    async def save(self, user_id: str, upload: UploadFile, space_left: int | None = None) -> StoredFile:
+        settings = get_settings()
+        max_bytes = settings.max_upload_bytes
+        content_type, display_name = await _validated_type(upload, sanitize_filename(upload.filename))
+
+        stored_name = f"{uuid.uuid4()}{ALLOWED_TYPES[content_type]}"
+        destination = self.path(user_id, stored_name)
+        self.user_dir(user_id)
+
+        size = 0
+        try:
+            with open(destination, "xb") as out:
+                while chunk := await upload.read(CHUNK_SIZE):
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise HTTPException(
+                            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                            detail=f"'{display_name}' is larger than the {settings.max_upload_size_mb} MB limit.",
+                        )
+                    # Checked while streaming: a file that cannot fit stops here, not after it is all on disk.
+                    if space_left is not None and size > space_left:
+                        raise NotEnoughSpace(display_name)
+                    out.write(chunk)
+            if size == 0:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"'{display_name}' is empty.")
+            os.chmod(destination, 0o600)
+            virus_scan.check(destination, display_name)
+        except BaseException:
+            remove_file(destination)
+            raise
+        return StoredFile(stored_name, display_name, content_type, size)
+
+    def delete(self, user_id: str, stored_name: str) -> None:
+        path = self.safe_path(user_id, stored_name)
+        if path is not None:
+            remove_file(path)
+
+    def iter_files(self, user_id: str) -> Iterator[tuple[Path, str]]:
+        folder = self.base / user_id
+        if not _USER_ID_RE.match(user_id) or not folder.is_dir():
+            return
+        for path in sorted(folder.iterdir()):
+            if path.is_file() and _STORED_NAME_RE.match(path.name):
+                yield path, path.relative_to(self.base).as_posix()
+
+
+    def delete_user_files(self, user_id: str) -> None:
+        folder = self.base / user_id
+        if _USER_ID_RE.match(user_id) and folder.is_dir() and folder.resolve().is_relative_to(self.base):
+            shutil.rmtree(folder)
+
+
+def quota_bytes(user_quota: int | None) -> int:
+    """An account's storage limit: its own, or the DEFAULT_QUOTA_MB setting."""
+    return user_quota if user_quota is not None else get_settings().default_quota_bytes
+
+
+def get_file_store() -> LocalFileStore:
+    return LocalFileStore(get_settings().files_path)
+
+
+def ensure_storage_dirs() -> None:
+    base = get_settings().files_path
+    base.mkdir(parents=True, exist_ok=True)
+    os.chmod(base, 0o700)
+
+
+# ---------------------------------------------------------------- moving files from the old layout
+
+
+def _move_file(source: Path, target: Path) -> None:
+    """Move a file, also across disks: copy to a temporary name, check the size, then rename into place."""
     try:
-        with open(destination, "xb") as out:
-            while chunk := await upload.read(CHUNK_SIZE):
-                size += len(chunk)
-                if size > max_bytes:
-                    raise HTTPException(
-                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                        detail=f"'{display_name}' is larger than the {settings.max_upload_size_mb} MB limit.",
-                    )
-                out.write(chunk)
-        if size == 0:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"'{display_name}' is empty.")
-        os.chmod(destination, 0o600)
-    except BaseException:
-        remove_file(destination)
-        raise
-
-    return Document(
-        record_id=record.id,
-        original_filename=display_name,
-        stored_filename=stored_name,
-        storage_folder=folder,
-        content_type=content_type,
-        size_bytes=size,
-    )
+        os.rename(source, target)
+        return
+    except OSError as error:
+        if error.errno != errno.EXDEV:
+            raise
+    partial = target.with_name(f".{target.name}.partial")
+    shutil.copyfile(source, partial)
+    if partial.stat().st_size != source.stat().st_size:
+        partial.unlink()
+        raise OSError("copy is incomplete")
+    os.chmod(partial, 0o600)
+    os.replace(partial, target)
+    source.unlink()
 
 
-def iter_stored_files(base: Path):
-    """Yield (absolute_path, relative_posix_path) for every stored file."""
-    for path in sorted(base.rglob("*")):
-        if path.is_file():
-            yield path, path.relative_to(base).as_posix()
+def relocate_legacy_files(db: Session, legacy_base: Path, files: LocalFileStore) -> tuple[int, int]:
+    """Move files from UPLOAD_DIR/<type folder>/ to FILES_DIR/<user_id>/. Safe to run again after a crash.
+
+    A document is marked as moved (storage_folder = "") only once its file is in the new place. Returns
+    (moved, missing); missing files are left marked, so they are counted again on the next start.
+    """
+    rows = db.execute(
+        select(Document, MedicalRecord.user_id)
+        .join(MedicalRecord, Document.record_id == MedicalRecord.id)
+        .where(Document.storage_folder != "")
+    ).all()
+    moved = missing = 0
+    legacy_root = legacy_base.resolve()
+    for document, user_id in rows:
+        target = files.safe_path(user_id, document.stored_filename)
+        source = (legacy_root / document.storage_folder / document.stored_filename).resolve()
+        if target is None or document.storage_folder not in LEGACY_FOLDERS or not source.is_relative_to(legacy_root):
+            missing += 1
+            continue
+        if not target.is_file():
+            if not source.is_file():
+                missing += 1
+                continue
+            files.user_dir(user_id)
+            _move_file(source, target)
+        document.storage_folder = ""
+        db.commit()
+        moved += 1
+
+    if legacy_root.is_dir():
+        for folder in [*(legacy_root / name for name in LEGACY_FOLDERS), legacy_root]:
+            try:
+                folder.rmdir()  # only succeeds when empty
+            except OSError:
+                pass
+    if moved:
+        logger.info("Moved %d stored files to the per-user folders", moved)
+    if missing:
+        logger.warning("%d documents have no file in the old upload folder or the new one", missing)
+    return moved, missing

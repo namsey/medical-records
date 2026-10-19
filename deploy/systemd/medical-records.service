@@ -1,0 +1,25 @@
+[Unit]
+Description=Medical records app (FastAPI, behind Caddy on the same machine)
+Documentation=file:///opt/medical-records/DEPLOY.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=medical-records
+Group=medical-records
+WorkingDirectory=/opt/medical-records/backend
+# Settings: GOOGLE_*, ADMIN_EMAIL, SESSION_SECRET, DATABASE_URL, FILES_DIR, BACKUP_STATUS_DIR, ... (see DEPLOY.md)
+EnvironmentFile=/etc/medical-records/app.env
+# One process (rate limits and upload locks live in memory); only reachable through Caddy on this machine.
+ExecStart=/opt/medical-records/backend/.venv/bin/python -m app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/srv/medical-records/data
+# Logs go to the journal, rotated by deploy/journald/medical-records.conf.
+
+[Install]
+WantedBy=multi-user.target
