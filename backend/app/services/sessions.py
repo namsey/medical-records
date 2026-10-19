@@ -16,6 +16,9 @@ from app.config import get_settings
 from app.services import audit
 from app.models import User, UserSession, utcnow
 
+# Recording each request's time would mean a database write per request; this often is enough for the idle timeout.
+LAST_SEEN_INTERVAL = timedelta(minutes=5)
+
 
 def hash_token(token: str) -> str:
     """HMAC of a random token (session cookie or invite link), as stored in the database."""
@@ -94,7 +97,9 @@ def get_user_for_token(db: Session, token: str | None) -> User | None:
     session = db.get(UserSession, hash_token(token))
     if session is None:
         return None
-    if session.expires_at <= utcnow():
+    now = utcnow()
+    # Signed out 14 days after signing in (SESSION_MAX_AGE_DAYS), or sooner after SESSION_IDLE_HOURS unused.
+    if session.expires_at <= now or session.last_seen_at <= now - _idle_limit():
         db.delete(session)
         db.commit()
         return None
@@ -102,7 +107,14 @@ def get_user_for_token(db: Session, token: str | None) -> User | None:
     # A disabled account is signed out on its very next request.
     if not can_use_app(user):
         return None
+    if now - session.last_seen_at >= LAST_SEEN_INTERVAL:
+        session.last_seen_at = now
+        db.commit()
     return user
+
+
+def _idle_limit() -> timedelta:
+    return timedelta(hours=get_settings().session_idle_hours)
 
 
 def delete_user_sessions(db: Session, user_id: str) -> None:
@@ -117,5 +129,8 @@ def delete_session(db: Session, token: str | None) -> None:
 
 
 def purge_expired(db: Session) -> None:
-    db.execute(delete(UserSession).where(UserSession.expires_at <= utcnow()))
+    now = utcnow()
+    db.execute(
+        delete(UserSession).where((UserSession.expires_at <= now) | (UserSession.last_seen_at <= now - _idle_limit()))
+    )
     db.commit()

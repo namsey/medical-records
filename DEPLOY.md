@@ -296,6 +296,7 @@ BACKUP_STATUS_DIR=/var/lib/medical-records-backup
 GRIEVANCE_NAME=<your name>
 GRIEVANCE_EMAIL=<email for privacy questions>
 # Optional: DEFAULT_QUOTA_MB=100   MAX_UPLOAD_SIZE_MB=20   CLAMAV_SOCKET=/run/clamav/clamd.ctl (C6)
+#           SESSION_IDLE_HOURS=24   (sign out after a day unused; sign-ins end after 14 days in any case)
 ```
 
 The app refuses to start if a required setting is missing or if `GOOGLE_REDIRECT_URI` is not `https://`.
