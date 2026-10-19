@@ -1,0 +1,15 @@
+# Weekly update PRs for the backend (pip), the frontend (npm) and the CI actions (pinned to commit SHAs).
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
