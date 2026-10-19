@@ -2,7 +2,7 @@
 
 Run by Playwright's webServer (see playwright.config.ts); it serves the production build from frontend/dist.
 
-1. Wipes E2E_DATA_DIR and points the app's database and upload folder at it (never at your real data/).
+1. Wipes E2E_DATA_DIR and points the app's database and files folder at it (never at your real data/).
 2. Runs the migrations and creates a login session for the allowed account, the same way the backend tests do,
    and writes it as a Playwright storage state file (E2E_STATE_FILE). The app's Google-only sign-in is unchanged:
    no test-only login route exists in the app.
@@ -37,6 +37,7 @@ os.environ.update(
         "ALLOWED_EMAIL": EMAIL,
         "SESSION_SECRET": "e2e-session-secret-e2e-session-secret-1234",
         "DATABASE_URL": f"sqlite:///{DATA_DIR / 'e2e.db'}",
+        "FILES_DIR": str(DATA_DIR / "files"),
         "UPLOAD_DIR": str(DATA_DIR / "uploads"),
     }
 )

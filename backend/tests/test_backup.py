@@ -27,9 +27,9 @@ def test_backup_zip_contains_database_and_files(client, make_record, tmp_path):
     names = archive.namelist()
     assert "database/medical_records.db" in names
     assert "backup_info.json" in names
-    uploads = [n for n in names if n.startswith("uploads/")]
-    assert len(uploads) == 2
-    assert {archive.read(n) for n in uploads} == {PDF_BYTES, PNG_BYTES}
+    files = [n for n in names if n.startswith("files/")]
+    assert len(files) == 2
+    assert {archive.read(n) for n in files} == {PDF_BYTES, PNG_BYTES}
 
     database = tmp_path / "restored.db"
     database.write_bytes(archive.read("database/medical_records.db"))

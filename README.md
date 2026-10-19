@@ -2,7 +2,7 @@
 
 A private, single-user web app for storing and organising your own medical records: doctor visits,
 prescriptions, lab reports, diagnoses, scans and documents. It is built mobile-first for an Android phone
-and keeps everything on your own machine (SQLite database plus a local uploads folder, no cloud storage).
+and keeps everything on your own machine (SQLite database plus a local files folder, no cloud storage).
 
 **Workflow:** Add → Upload → Organise → Search → View → Download
 
@@ -35,7 +35,7 @@ In production one process serves everything: FastAPI serves the API under `/api`
 ```text
 backend/            FastAPI app (app/), Alembic migrations (alembic/), tests (tests/)
 frontend/           React app (src/), built into frontend/dist
-data/               Created on first run: medical_records.db and uploads/  (never commit this)
+data/               Created on first run: medical_records.db and files/<user id>/  (never commit this)
 .env                Your configuration (never commit this)  ->  copy from .env.example
 ```
 
@@ -161,7 +161,7 @@ cd frontend && npx playwright install chromium                     # once, for t
 cd frontend && E2E_PYTHON=../backend/.venv/bin/python npm run test:e2e   # end-to-end tests in a real browser
 ```
 
-The backend tests use a temporary database and upload folder and never touch your real data. Google is not
+The backend tests use a temporary database and files folder and never touch your real data. Google is not
 contacted: the sign-in tests replace the Google call.
 
 The end-to-end tests (`frontend/e2e/`) build the app, start the real server against a throwaway database in your
@@ -193,8 +193,25 @@ In the app open **Home → menu (top right) → Backup and export**:
 Backups contain your private medical data. Store them somewhere safe (they are not encrypted).
 
 To restore: stop the app, unzip the backup, copy `database/medical_records.db` to `data/medical_records.db`
-(delete any `medical_records.db-wal` / `-shm` files next to it) and copy the `uploads/` folder to
-`data/uploads/`, then start the app again.
+(delete any `medical_records.db-wal` / `-shm` files next to it) and copy the `files/` folder to
+`data/files/`, then start the app again. (Older backups have an `uploads/` folder instead: copy it to
+`data/uploads/` and the app moves the files into `data/files/` when it starts.)
+
+## Where data is stored
+
+| What | Where | Setting |
+| --- | --- | --- |
+| Records, doctors, labs, tags (SQLite, WAL mode) | `data/medical_records.db` | `DATABASE_URL` |
+| Attached files | `data/files/<user id>/<random uuid>.<ext>` | `FILES_DIR` |
+| Copy of the database taken before an upgrade changes it | `data/backups/pre-<revision>-<time>.db` | (next to the database) |
+
+Every record, doctor, laboratory and tag belongs to one user. Upgrades run by themselves when the app starts:
+existing data is given to the `ALLOWED_EMAIL` account, and files from the old `data/uploads/<type>/` layout
+(`UPLOAD_DIR`) are moved into `data/files/<user id>/`. If anything goes wrong, stop the app, put the `pre-…` copy
+back as `data/medical_records.db` and move the files back.
+
+On a server, keep the database and the files folder on the same local disk (for example one attached block volume).
+SQLite must not live on a network file system (NFS).
 
 ## Security notes
 
@@ -205,7 +222,7 @@ To restore: stop the app, unzip the backup, copy `database/medical_records.db` t
 - Every `/api` route except sign-in and `/api/health` requires a valid session. State-changing requests also need
   a custom header, which blocks cross-site request forgery. No CORS is enabled.
 - Uploaded files live outside any public folder and are only served through authenticated endpoints. Stored names are
-  random UUIDs, paths are checked to stay inside the upload folder, and the file type is verified from the file's
+  random UUIDs, paths are checked to stay inside the user's files folder, and the file type is verified from the file's
   actual contents (not its name or the browser's claim). Size is limited by `MAX_UPLOAD_SIZE_MB`.
 - Security headers (CSP, `nosniff`, frame protection, no referrer, `no-store` for API responses). The interactive
   API docs are disabled.

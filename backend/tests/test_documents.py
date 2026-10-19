@@ -5,7 +5,7 @@ import pytest
 
 from app.config import get_settings
 from app.database import SessionLocal
-from app.models import Document
+from app.models import Document, User
 from tests.conftest import JPEG_BYTES, PDF_BYTES, PNG_BYTES, WEBP_BYTES
 
 
@@ -14,7 +14,7 @@ def upload(client, record_id, name, content, content_type="application/octet-str
 
 
 def stored_files() -> list[Path]:
-    return [p for p in get_settings().upload_path.rglob("*") if p.is_file()]
+    return [p for p in get_settings().files_path.rglob("*") if p.is_file()]
 
 
 @pytest.mark.parametrize(
@@ -42,19 +42,17 @@ def test_upload_allowed_types(client, make_record, name, content, mime, ext):
     assert name not in files[0].name
 
 
-def test_files_are_filed_by_record_type(client, make_record):
-    cases = {
-        "prescription": "prescriptions",
-        "lab_report": "lab_reports",
-        "medical_document": "medical_documents",
-        "scan": "scans",
-        "doctor_visit": "other",
-    }
-    for record_type, folder in cases.items():
-        extra = {"title": "T", "test_name": "T"}
-        record = make_record(record_type=record_type, **extra)
+def test_files_are_stored_in_the_owners_folder(client, make_record):
+    with SessionLocal() as db:
+        owner_id = db.query(User).filter_by(email="owner@example.com").one().id
+    for record_type in ("prescription", "scan", "doctor_visit"):
+        record = make_record(record_type=record_type, title="T")
         assert upload(client, record["id"], "a.pdf", PDF_BYTES).status_code == 201
-        assert any(p.parent.name == folder for p in stored_files()), record_type
+    files = stored_files()
+    assert len(files) == 3
+    assert {p.parent for p in files} == {get_settings().files_path / owner_id}
+    assert all(p.stat().st_mode & 0o777 == 0o600 for p in files)
+    assert (get_settings().files_path / owner_id).stat().st_mode & 0o777 == 0o700
 
 
 def test_upload_multiple_files_in_one_request(client, make_record):
@@ -110,7 +108,7 @@ def test_unsafe_original_filename_is_sanitised(client, make_record):
     assert "/" not in response.json()[0]["original_filename"]
     assert "\x00" not in response.json()[0]["original_filename"]
     for path in stored_files():
-        assert path.resolve().is_relative_to(get_settings().upload_path)
+        assert path.resolve().is_relative_to(get_settings().files_path)
 
 
 def test_batch_is_all_or_nothing(client, make_record):
@@ -185,8 +183,8 @@ def test_files_are_not_served_without_login(client, anon, make_record):
     assert anon.get(f"/api/documents/{document['id']}/view").status_code == 401
     assert anon.get(f"/api/documents/{document['id']}/download").status_code == 401
     # The upload folder is not exposed as a static path either.
-    for path in (f"/uploads/{stored.parent.name}/{stored.name}", f"/data/uploads/{stored.parent.name}/{stored.name}",
-                 f"/{stored.name}"):
+    for path in (f"/files/{stored.parent.name}/{stored.name}", f"/data/files/{stored.parent.name}/{stored.name}",
+                 f"/{stored.parent.name}/{stored.name}", f"/{stored.name}"):
         response = anon.get(path)
         assert PDF_BYTES not in response.content
 
@@ -200,7 +198,7 @@ def test_unknown_document_is_404(client):
 def test_tampered_database_row_cannot_escape_upload_dir(client, make_record):
     record = make_record()
     document = upload(client, record["id"], "a.pdf", PDF_BYTES).json()[0]
-    secret = get_settings().upload_path.parent / "secret.txt"
+    secret = get_settings().files_path.parent / "secret.txt"
     secret.write_text("top secret")
     with SessionLocal() as db:
         row = db.get(Document, document["id"])

@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.models import Doctor, Lab, MedicalRecord, Tag
 from app.schemas import DoctorOut, LabOut, RecordOut
 from app.services.records import FULL_LOAD
-from app.services.storage import iter_stored_files
+from app.services.storage import get_file_store
 
 APP_VERSION = "1.0"
 
@@ -43,7 +43,6 @@ def _snapshot_database(destination: Path) -> None:
 
 def create_backup_zip() -> Path:
     """Build the backup archive in a temporary file and return its path (caller deletes it)."""
-    settings = get_settings()
     handle = tempfile.NamedTemporaryFile(prefix="medical-backup-", suffix=".zip", delete=False)
     handle.close()
     archive_path = Path(handle.name)
@@ -54,8 +53,8 @@ def create_backup_zip() -> Path:
             file_count = 0
             with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
                 archive.write(snapshot, "database/medical_records.db")
-                for absolute, relative in iter_stored_files(settings.upload_path):
-                    archive.write(absolute, f"uploads/{relative}")
+                for absolute, relative in get_file_store().iter_files():
+                    archive.write(absolute, f"files/{relative}")
                     file_count += 1
                 manifest = {
                     "app": "personal-medical-records",
@@ -63,7 +62,7 @@ def create_backup_zip() -> Path:
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "uploaded_files": file_count,
                     "restore": "Stop the app, put database/medical_records.db at data/medical_records.db "
-                    "and the uploads/ folder at data/uploads/, then start the app again.",
+                    "and the files/ folder at data/files/, then start the app again.",
                 }
                 archive.writestr("backup_info.json", json.dumps(manifest, indent=2))
     except BaseException:

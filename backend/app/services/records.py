@@ -14,7 +14,6 @@ from app.models import (
     record_tags,
 )
 from app.schemas import RECORD_TYPE_LABELS, RecordIn, RecordSummary, RecordType, TimelineItem
-from app.services import storage
 
 SCALAR_FIELDS = (
     "hospital",
@@ -142,14 +141,14 @@ def update_record(db: Session, record: MedicalRecord, payload: RecordIn) -> Medi
     return get_record_or_404(db, record.user_id, record.id)
 
 
-def delete_record(db: Session, record: MedicalRecord) -> None:
-    files = [storage.stored_path(document) for document in record.documents]
+def delete_record(db: Session, record: MedicalRecord) -> list[str]:
+    """Delete the record and its children. Returns the stored names of its files, for the caller to remove."""
+    stored_names = [document.stored_filename for document in record.documents]
     db.delete(record)
     db.flush()
     remove_orphan_tags(db)
     db.commit()
-    for path in files:
-        storage.remove_file(path)
+    return stored_names
 
 
 def to_summary(record: MedicalRecord) -> RecordSummary:

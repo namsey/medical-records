@@ -4,19 +4,21 @@ Every store is bound to one user, so a query can only ever see that user's rows.
 another user looks exactly like something that does not exist (404). The only implementation is SQLite.
 """
 
+from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from starlette.datastructures import UploadFile
 
 from app.database import get_db
 from app.models import Doctor, Document, Lab, MedicalRecord, Tag, User, record_tags
 from app.schemas import RecordIn
 from app.security import get_current_user
 from app.services import records as record_service
-from app.services import storage
 from app.services.search import RecordFilters, search_records
+from app.services.storage import FileStore, get_file_store
 
 Owned = TypeVar("Owned", Doctor, Lab)
 
@@ -32,7 +34,8 @@ class RecordStore(Protocol):
     def update(self, record: MedicalRecord, payload: RecordIn) -> MedicalRecord: ...
     def delete(self, record: MedicalRecord) -> None: ...
     def get_document(self, document_id: str) -> Document: ...
-    def add_documents(self, documents: list[Document]) -> None: ...
+    def document_path(self, document: Document) -> Path: ...
+    async def add_documents(self, record: MedicalRecord, uploads: list[UploadFile]) -> list[Document]: ...
     def delete_document(self, document: Document) -> None: ...
     def storage_used_bytes(self) -> int: ...
     def list_doctors(self, q: str | None) -> list[Doctor]: ...
@@ -48,9 +51,10 @@ class RecordStore(Protocol):
 
 
 class SqlRecordStore:
-    def __init__(self, db: Session, user_id: str) -> None:
+    def __init__(self, db: Session, user_id: str, files: FileStore | None = None) -> None:
         self.db = db
         self.user_id = user_id
+        self.files = files or get_file_store()
 
     # ------------------------------------------------------------ records
 
@@ -89,7 +93,8 @@ class SqlRecordStore:
         return record_service.update_record(self.db, record, payload)
 
     def delete(self, record: MedicalRecord) -> None:
-        record_service.delete_record(self.db, record)
+        for stored_name in record_service.delete_record(self.db, record):
+            self.files.delete(self.user_id, stored_name)
 
     # ------------------------------------------------------------ documents
 
@@ -103,20 +108,39 @@ class SqlRecordStore:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
         return document
 
-    def add_documents(self, documents: list[Document]) -> None:
-        """Save the rows for files that are already stored (all or none)."""
+    def document_path(self, document: Document) -> Path:
+        """Where the document's file is (it may be missing)."""
+        return self.files.path(self.user_id, document.stored_filename)
+
+    async def add_documents(self, record: MedicalRecord, uploads: list[UploadFile]) -> list[Document]:
+        """Store the files and their rows on the user's record. All are stored or none are."""
+        saved: list[Document] = []
         try:
-            self.db.add_all(documents)
+            for upload in uploads:
+                stored = await self.files.save(self.user_id, upload)
+                saved.append(
+                    Document(
+                        record_id=record.id,
+                        original_filename=stored.display_name,
+                        stored_filename=stored.stored_name,
+                        content_type=stored.content_type,
+                        size_bytes=stored.size_bytes,
+                    )
+                )
+            self.db.add_all(saved)
             self.db.commit()
         except BaseException:
             self.db.rollback()
+            for document in saved:
+                self.files.delete(self.user_id, document.stored_filename)
             raise
+        return saved
 
     def delete_document(self, document: Document) -> None:
-        path = storage.stored_path(document)
+        stored_name = document.stored_filename
         self.db.delete(document)
         self.db.commit()
-        storage.remove_file(path)
+        self.files.delete(self.user_id, stored_name)
 
     def storage_used_bytes(self) -> int:
         """Total size of the user's stored files, from the database (no walk over the disk)."""

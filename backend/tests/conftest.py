@@ -1,4 +1,4 @@
-"""Test setup: an isolated temp database and upload folder, and helpers for authenticated clients."""
+"""Test setup: an isolated temp database and files folder, and helpers for authenticated clients."""
 
 import os
 import shutil
@@ -16,6 +16,7 @@ os.environ.update(
         "ALLOWED_EMAIL": "owner@example.com",
         "SESSION_SECRET": "test-secret-test-secret-test-secret-1234",
         "DATABASE_URL": f"sqlite:///{_TEST_ROOT / 'test.db'}",
+        "FILES_DIR": str(_TEST_ROOT / "files"),
         "UPLOAD_DIR": str(_TEST_ROOT / "uploads"),
         "MAX_UPLOAD_SIZE_MB": "20",
     }
@@ -52,10 +53,10 @@ def _clean_state() -> Iterator[None]:
         for table in reversed(Base.metadata.sorted_tables):
             db.execute(table.delete())
         db.commit()
-    uploads = get_settings().upload_path
-    for folder in uploads.iterdir():
-        for item in folder.iterdir():
-            item.unlink()
+    for folder in (get_settings().files_path, get_settings().upload_path):
+        if folder.is_dir():
+            for item in folder.iterdir():
+                shutil.rmtree(item) if item.is_dir() else item.unlink()
 
 
 @pytest.fixture

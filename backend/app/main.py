@@ -40,6 +40,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     storage.ensure_storage_dirs()
     run_migrations()
     with SessionLocal() as db:
+        storage.relocate_legacy_files(db, settings.upload_path, storage.get_file_store())
         sessions.purge_expired(db)
     yield
 

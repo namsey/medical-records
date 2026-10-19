@@ -28,7 +28,8 @@ class Settings(BaseSettings):
     allowed_email: str = ""
     session_secret: str = ""
     database_url: str = "sqlite:///data/medical_records.db"
-    upload_dir: str = "data/uploads"
+    files_dir: str = "data/files"
+    upload_dir: str = "data/uploads"  # old layout, only read to move files into files_dir
     max_upload_size_mb: int = Field(default=20, ge=1, le=500)
     session_max_age_days: int = Field(default=14, ge=1, le=365)
 
@@ -40,12 +41,20 @@ class Settings(BaseSettings):
     def max_upload_bytes(self) -> int:
         return self.max_upload_size_mb * 1024 * 1024
 
-    @property
-    def upload_path(self) -> Path:
-        path = Path(self.upload_dir).expanduser()
+    @staticmethod
+    def _project_path(value: str) -> Path:
+        path = Path(value).expanduser()
         if not path.is_absolute():
             path = PROJECT_ROOT / path
         return path.resolve()
+
+    @property
+    def files_path(self) -> Path:
+        return self._project_path(self.files_dir)
+
+    @property
+    def upload_path(self) -> Path:
+        return self._project_path(self.upload_dir)
 
     @property
     def resolved_database_url(self) -> str:
