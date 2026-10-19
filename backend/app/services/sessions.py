@@ -13,6 +13,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.services import audit
 from app.models import User, UserSession, utcnow
 
 
@@ -43,6 +44,15 @@ def can_use_app(user: User) -> bool:
 def find_user(db: Session, email: str) -> User | None:
     """The account for an email, ignoring case (rows from older versions may not be stored in lower case)."""
     return db.scalar(select(User).where(func.lower(User.email) == email.strip().lower()))
+
+
+def demote_stale_admins(db: Session) -> int:
+    """Keep admin rights in sync with ADMIN_EMAIL: any other admin account becomes a normal user (audited)."""
+    stale = [user for user in db.scalars(select(User).where(User.role == "admin")) if not is_admin_email(user.email)]
+    for user in stale:
+        user.role = "user"
+        audit.record(db, "admin_demoted", target=user, detail="not ADMIN_EMAIL")
+    return len(stale)
 
 
 def get_or_create_user(db: Session, email: str, name: str | None) -> User:

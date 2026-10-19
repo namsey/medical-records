@@ -42,6 +42,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     backup_service.prepare_scratch_dir()
     run_migrations()
     with SessionLocal() as db:
+        sessions.demote_stale_admins(db)
         storage.relocate_legacy_files(db, settings.upload_path, storage.get_file_store())
         sessions.purge_expired(db)
         audit.purge_old(db)

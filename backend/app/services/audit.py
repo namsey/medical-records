@@ -27,6 +27,7 @@ ACTIONS = {
     "consent_given": "Privacy notice accepted",
     "signed_out_everywhere": "Signed out of all devices",
     "data_downloaded": "Data downloaded",
+    "admin_demoted": "Admin rights removed",
 }
 
 
