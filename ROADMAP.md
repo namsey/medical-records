@@ -83,3 +83,19 @@ Do not implement or suggest these unless I explicitly ask.
   - Notes: /api/health (app and DB), /api/health/disk (>80% on the data or system disk) and /api/health/backup (failed, or no success in 26h) answer only ok or problem, for three UptimeRobot email monitors (DEPLOY.md section 8). backup.sh writes last-failure. Admin → Server shows the details. The app runs as a systemd service; the journal is capped at 500 MB and one month (deploy/journald). Docker is not used, so Docker log rotation does not apply.
 
 Order: #38 → #39 → #44 → #40 → #41 → #42 → #43 → #45. Don't invite anyone until #39–#44 are done.
+
+## Security hardening (before public deployment)
+- [x] sec-1 Rate-limit and audit the backup/export endpoints. /api/backup and /api/export/json use the per-account DATA_EXPORTS limit and write a "data_downloaded" audit entry; at most 2 export/backup archives are built at once (503 "Busy, try again in a minute" after 5 s); temporary archives are written to <data>/tmp (0700, cleared at startup).
+  - Notes: The limit is one shared budget of 5 an hour across /api/backup, /api/export/json and /api/account/export. Tests: the 6th download in an hour is 429, audit rows, 503 when both slots are busy, archives built in data/tmp.
+- [x] sec-2 Enforce the body-size limit in the app, not only in Caddy: count the bytes actually streamed so chunked requests without a Content-Length are capped too.
+  - Notes: MaxBodySizeMiddleware wraps receive and answers 413 once the total passes the limit. A chunked upload over the limit gets 413 and stores nothing (tested).
+- [x] sec-3 Clean up pre-migration snapshots: after a successful upgrade keep only the 3 newest data/backups/pre-*.db files; log only the count.
+  - Notes: Ordered by the time in the file name. A failed upgrade deletes nothing (tested).
+- [x] sec-4 Keep admin rights in sync with ADMIN_EMAIL: at startup, every other admin account becomes a normal user, with an "admin_demoted" audit entry.
+  - Notes: Runs in the lifespan after migrations; shown as "Admin rights removed" in Admin → Activity. The demoted account loses the admin pages at once (tested).
+- [x] sec-5 Idle session timeout: sessions.last_seen_at (migration 0006, existing rows = upgrade time); sessions unused for more than SESSION_IDLE_HOURS (default 24, 1–720) are rejected; the 14-day absolute expiry stays.
+  - Notes: last_seen_at is written at most every 5 minutes; purge_expired also removes idle sessions. Documented in README, .env.example and DEPLOY.md B7.
+- [x] sec-6 CI supply-chain checks: pip-audit, npm audit (high and above, no dev dependencies) and gitleaks over the full history; Dependabot weekly for pip, npm and github-actions; actions pinned to commit SHAs.
+  - Notes: New "Supply chain" CI job; gitleaks is a release binary checked against its SHA-256. The first scans found nothing, so no dependency changes or allowlist were needed.
+- [x] sec-7 DEPLOY.md corrections: the Always Free A1 allowance is now 1,500 OCPU-hours and 9,000 GB-hours a month (2 OCPUs / 12 GB in total), and B6/C1 deploy a tagged release.
+  - Notes: Fixed the allowance table, A6 and C5, with a warning that an instance over the limit is shut down on free accounts. C1 explains how to tag a release; v1.0.0 is the first.
