@@ -21,6 +21,11 @@ def _token_id(token: str) -> str:
     return hmac.new(secret, token.encode(), hashlib.sha256).hexdigest()
 
 
+def is_allowed_email(email: str) -> bool:
+    """The one place that decides which accounts may use the app (sign-in and every request)."""
+    return email.strip().lower() == get_settings().allowed_email_normalized
+
+
 def get_or_create_user(db: Session, email: str, name: str | None) -> User:
     email = email.strip().lower()
     user = db.scalar(select(User).where(User.email == email))
@@ -62,7 +67,7 @@ def get_user_for_token(db: Session, token: str | None) -> User | None:
         return None
     user = session.user
     # If ALLOWED_EMAIL changes, previously issued sessions for other accounts stop working immediately.
-    if user.email.lower() != get_settings().allowed_email_normalized:
+    if not is_allowed_email(user.email):
         return None
     return user
 

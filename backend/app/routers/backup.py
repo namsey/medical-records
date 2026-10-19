@@ -2,13 +2,11 @@
 
 from fastapi import APIRouter, Depends, Response
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
-from app.database import get_db
-from app.models import User
-from app.security import get_current_user, private_dependencies
+from app.security import private_dependencies
 from app.services import backup
+from app.services.record_store import RecordStore, get_record_store
 
 router = APIRouter(prefix="/api", tags=["backup"], dependencies=private_dependencies)
 
@@ -16,9 +14,9 @@ DOWNLOAD_HEADERS = {"Cache-Control": "private, no-store", "X-Content-Type-Option
 
 
 @router.get("/backup")
-def download_backup(user: User = Depends(get_current_user)) -> FileResponse:
+def download_backup(store: RecordStore = Depends(get_record_store)) -> FileResponse:
     """ZIP with a copy of the database holding only the signed-in user's data, and that user's files."""
-    archive = backup.create_backup_zip(user.id)
+    archive = store.backup_zip()
     return FileResponse(
         archive,
         media_type="application/zip",
@@ -29,10 +27,10 @@ def download_backup(user: User = Depends(get_current_user)) -> FileResponse:
 
 
 @router.get("/export/json")
-def export_json(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Response:
+def export_json(store: RecordStore = Depends(get_record_store)) -> Response:
     """The signed-in user's doctors, laboratories and records (with medicines / results / tags / document metadata)."""
     return Response(
-        content=backup.build_json_export(db, user.id),
+        content=store.export_json(),
         media_type="application/json",
         headers={
             **DOWNLOAD_HEADERS,

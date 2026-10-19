@@ -90,9 +90,10 @@ def _sync_tags(db: Session, record: MedicalRecord, names: list[str]) -> None:
     record.tags = tags
 
 
-def remove_orphan_tags(db: Session) -> None:
+def remove_orphan_tags(db: Session, user_id: str) -> None:
+    """Delete the user's tags that no record uses any more."""
     used = select(record_tags.c.tag_id)
-    db.execute(delete(Tag).where(Tag.id.not_in(used)))
+    db.execute(delete(Tag).where(Tag.user_id == user_id, Tag.id.not_in(used)))
 
 
 def apply_payload(db: Session, record: MedicalRecord, payload: RecordIn) -> None:
@@ -136,7 +137,7 @@ def create_record(db: Session, user_id: str, payload: RecordIn) -> MedicalRecord
 def update_record(db: Session, record: MedicalRecord, payload: RecordIn) -> MedicalRecord:
     apply_payload(db, record, payload)
     db.flush()
-    remove_orphan_tags(db)
+    remove_orphan_tags(db, record.user_id)
     db.commit()
     return get_record_or_404(db, record.user_id, record.id)
 
@@ -144,9 +145,10 @@ def update_record(db: Session, record: MedicalRecord, payload: RecordIn) -> Medi
 def delete_record(db: Session, record: MedicalRecord) -> list[str]:
     """Delete the record and its children. Returns the stored names of its files, for the caller to remove."""
     stored_names = [document.stored_filename for document in record.documents]
+    user_id = record.user_id
     db.delete(record)
     db.flush()
-    remove_orphan_tags(db)
+    remove_orphan_tags(db, user_id)
     db.commit()
     return stored_names
 

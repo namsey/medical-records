@@ -220,6 +220,9 @@ SQLite must not live on a network file system (NFS).
   `ALLOWED_EMAIL` gets a session; anyone else is refused.
 - Server-side sessions: the browser holds only a random token in an HTTP-only, `SameSite=Lax` cookie (Secure when
   you use HTTPS). The database stores an HMAC of the token, never the token. Sessions expire after 14 days.
+- Every record, doctor, laboratory, tag and file belongs to one user, and every query is limited to the signed-in
+  user. Someone else's item answers exactly like one that does not exist (404), in lists, search, the timeline,
+  file downloads, backup and export alike. Tests sign in two users and check this both ways round.
 - Every `/api` route except sign-in and `/api/health` requires a valid session. State-changing requests also need
   a custom header, which blocks cross-site request forgery. No CORS is enabled.
 - Uploaded files live outside any public folder and are only served through authenticated endpoints. Stored names are

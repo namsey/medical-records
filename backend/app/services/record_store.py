@@ -16,6 +16,7 @@ from app.database import get_db
 from app.models import Doctor, Document, Lab, MedicalRecord, Tag, User, record_tags
 from app.schemas import RecordIn
 from app.security import get_current_user
+from app.services import backup
 from app.services import records as record_service
 from app.services.search import RecordFilters, search_records
 from app.services.storage import FileStore, get_file_store
@@ -38,6 +39,8 @@ class RecordStore(Protocol):
     async def add_documents(self, record: MedicalRecord, uploads: list[UploadFile]) -> list[Document]: ...
     def delete_document(self, document: Document) -> None: ...
     def storage_used_bytes(self) -> int: ...
+    def backup_zip(self) -> Path: ...
+    def export_json(self) -> str: ...
     def list_doctors(self, q: str | None) -> list[Doctor]: ...
     def list_labs(self, q: str | None) -> list[Lab]: ...
     def get_doctor(self, doctor_id: str) -> Doctor: ...
@@ -150,6 +153,15 @@ class SqlRecordStore:
             .where(MedicalRecord.user_id == self.user_id)
         )
         return total or 0
+
+    # ------------------------------------------------------------ backup and export
+
+    def backup_zip(self) -> Path:
+        """ZIP of a database copy holding only this user's data, plus their files (caller deletes it)."""
+        return backup.create_backup_zip(self.user_id)
+
+    def export_json(self) -> str:
+        return backup.build_json_export(self.db, self.user_id)
 
     # ------------------------------------------------------------ doctors and laboratories
 

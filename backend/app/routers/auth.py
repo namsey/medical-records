@@ -83,7 +83,7 @@ def callback(
         return _login_redirect("failed")
 
     email = str(profile.get("email") or "").strip().lower()
-    if not email or profile.get("email_verified") is not True or email != settings.allowed_email_normalized:
+    if not email or profile.get("email_verified") is not True or not sessions.is_allowed_email(email):
         logger.warning("Sign-in rejected: account is not the allowed account")
         return _login_redirect("not_allowed")
 

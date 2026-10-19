@@ -71,6 +71,25 @@ def make_session_token(email: str = "owner@example.com") -> str:
         return sessions.create_session(db, user)
 
 
+OWNER_EMAIL = "owner@example.com"
+SECOND_EMAIL = "second@example.com"
+
+
+@pytest.fixture
+def allow_second_user(monkeypatch) -> None:
+    """Let a second account use the app, through the same single check that ALLOWED_EMAIL goes through."""
+    allowed = {OWNER_EMAIL, SECOND_EMAIL}
+    monkeypatch.setattr(sessions, "is_allowed_email", lambda email: email.strip().lower() in allowed)
+
+
+@pytest.fixture
+def second_client(allow_second_user) -> TestClient:
+    """A client logged in as a second, separate user."""
+    test_client = TestClient(app, headers=CSRF_HEADERS)
+    test_client.cookies.set("session", make_session_token(SECOND_EMAIL))
+    return test_client
+
+
 @pytest.fixture
 def client() -> TestClient:
     """A client logged in as the allowed user (sends the CSRF header like the web app does)."""
