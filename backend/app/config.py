@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     grievance_name: str = ""
     grievance_email: str = ""
     session_max_age_days: int = Field(default=14, ge=1, le=365)
+    session_idle_hours: int = Field(default=24, ge=1, le=720)
 
     @property
     def admin_email_normalized(self) -> str:

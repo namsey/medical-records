@@ -139,6 +139,7 @@ All settings are environment variables (or lines in `.env`); see `.env.example`.
 | `BACKUP_STATUS_DIR` | off | Where the backup writes its status, for `/api/health/backup` (DEPLOY.md, B12) |
 | `DISK_ALERT_PERCENT`, `BACKUP_MAX_AGE_HOURS` | `80`, `26` | Thresholds of the disk and backup health checks |
 | `SESSION_MAX_AGE_DAYS` | `14` | How long a sign-in lasts |
+| `SESSION_IDLE_HOURS` | `24` | A sign-in unused this long ends sooner (1–720) |
 
 ## Inviting people
 

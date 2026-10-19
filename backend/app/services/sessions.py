@@ -13,7 +13,11 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.services import audit
 from app.models import User, UserSession, utcnow
+
+# Recording each request's time would mean a database write per request; this often is enough for the idle timeout.
+LAST_SEEN_INTERVAL = timedelta(minutes=5)
 
 
 def hash_token(token: str) -> str:
@@ -43,6 +47,15 @@ def can_use_app(user: User) -> bool:
 def find_user(db: Session, email: str) -> User | None:
     """The account for an email, ignoring case (rows from older versions may not be stored in lower case)."""
     return db.scalar(select(User).where(func.lower(User.email) == email.strip().lower()))
+
+
+def demote_stale_admins(db: Session) -> int:
+    """Keep admin rights in sync with ADMIN_EMAIL: any other admin account becomes a normal user (audited)."""
+    stale = [user for user in db.scalars(select(User).where(User.role == "admin")) if not is_admin_email(user.email)]
+    for user in stale:
+        user.role = "user"
+        audit.record(db, "admin_demoted", target=user, detail="not ADMIN_EMAIL")
+    return len(stale)
 
 
 def get_or_create_user(db: Session, email: str, name: str | None) -> User:
@@ -84,7 +97,9 @@ def get_user_for_token(db: Session, token: str | None) -> User | None:
     session = db.get(UserSession, hash_token(token))
     if session is None:
         return None
-    if session.expires_at <= utcnow():
+    now = utcnow()
+    # Signed out 14 days after signing in (SESSION_MAX_AGE_DAYS), or sooner after SESSION_IDLE_HOURS unused.
+    if session.expires_at <= now or session.last_seen_at <= now - _idle_limit():
         db.delete(session)
         db.commit()
         return None
@@ -92,7 +107,14 @@ def get_user_for_token(db: Session, token: str | None) -> User | None:
     # A disabled account is signed out on its very next request.
     if not can_use_app(user):
         return None
+    if now - session.last_seen_at >= LAST_SEEN_INTERVAL:
+        session.last_seen_at = now
+        db.commit()
     return user
+
+
+def _idle_limit() -> timedelta:
+    return timedelta(hours=get_settings().session_idle_hours)
 
 
 def delete_user_sessions(db: Session, user_id: str) -> None:
@@ -107,5 +129,8 @@ def delete_session(db: Session, token: str | None) -> None:
 
 
 def purge_expired(db: Session) -> None:
-    db.execute(delete(UserSession).where(UserSession.expires_at <= utcnow()))
+    now = utcnow()
+    db.execute(
+        delete(UserSession).where((UserSession.expires_at <= now) | (UserSession.last_seen_at <= now - _idle_limit()))
+    )
     db.commit()

@@ -16,7 +16,7 @@ from app.models import Document, MedicalRecord, User, utcnow
 from app.privacy import PRIVACY_VERSION
 from app.security import get_current_user
 from app.services import audit, invites, sessions
-from app.services.backup import build_json_export
+from app.services.backup import archive_slot, build_json_export, scratch_dir
 from app.services.storage import FileStore, get_file_store
 
 _UNSAFE_PATH_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
@@ -52,8 +52,13 @@ def _unique(name: str, taken: set[str]) -> str:
 
 def build_data_export(db: Session, user_id: str, files: FileStore) -> Path:
     """ZIP with records.json and every attached file under its original name, one folder per record.
-    Written to a temporary file; the caller deletes it."""
-    handle = tempfile.NamedTemporaryFile(prefix="medical-export-", suffix=".zip", delete=False)
+    Written to a temporary file on the data disk; the caller deletes it."""
+    with archive_slot():
+        return _build_data_export(db, user_id, files)
+
+
+def _build_data_export(db: Session, user_id: str, files: FileStore) -> Path:
+    handle = tempfile.NamedTemporaryFile(prefix="medical-export-", suffix=".zip", delete=False, dir=scratch_dir())
     handle.close()
     archive_path = Path(handle.name)
     rows = db.execute(

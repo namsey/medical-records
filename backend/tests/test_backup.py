@@ -11,6 +11,7 @@ from app.database import SessionLocal
 from app.models import User
 from app.schemas import RecordIn
 from app.services import audit
+from app.services.backup import scratch_dir
 from app.services.record_store import SqlRecordStore
 from tests.conftest import PDF_BYTES, PNG_BYTES
 
@@ -58,13 +59,9 @@ def test_backup_zip_contains_database_and_files(client, make_record, tmp_path):
 
 
 def test_backup_leaves_no_temp_files_behind(client, make_record):
-    import glob
-    import tempfile
-
-    before = set(glob.glob(f"{tempfile.gettempdir()}/medical-backup-*"))
-    client.get("/api/backup")
-    after = set(glob.glob(f"{tempfile.gettempdir()}/medical-backup-*"))
-    assert after <= before
+    _seed(client, make_record)
+    assert client.get("/api/backup").status_code == 200
+    assert list(scratch_dir().iterdir()) == []
 
 
 def test_backup_of_empty_database(client):

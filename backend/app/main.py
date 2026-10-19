@@ -14,6 +14,7 @@ from app.middleware import MaxBodySizeMiddleware, SecurityHeadersMiddleware
 from app.migrations import run_migrations
 from app.routers import account, admin, auth, backup, directories, documents, health, overview, records
 from app.services import audit, sessions, storage
+from app.services import backup as backup_service
 
 logger = logging.getLogger("app")
 
@@ -38,8 +39,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         )
     settings.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     storage.ensure_storage_dirs()
+    backup_service.prepare_scratch_dir()
     run_migrations()
     with SessionLocal() as db:
+        sessions.demote_stale_admins(db)
         storage.relocate_legacy_files(db, settings.upload_path, storage.get_file_store())
         sessions.purge_expired(db)
         audit.purge_old(db)

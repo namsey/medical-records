@@ -1,6 +1,7 @@
 """Pure-ASGI middleware: security headers and request-size limiting."""
 
 from starlette.datastructures import MutableHeaders
+from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -31,6 +32,7 @@ SECURITY_HEADERS = {
 }
 
 HSTS = "max-age=31536000; includeSubDomains"
+TOO_LARGE = "The upload is too large."
 
 
 class SecurityHeadersMiddleware:
@@ -60,25 +62,40 @@ class SecurityHeadersMiddleware:
 
 
 class MaxBodySizeMiddleware:
-    """Reject oversized requests from their Content-Length before any of the body is read."""
+    """Reject oversized requests: from their Content-Length before any of the body is read, and, for requests
+    without one (chunked), as soon as the bytes actually received pass the limit."""
 
     def __init__(self, app: ASGIApp, *, max_bytes: int) -> None:
         self.app = app
         self.max_bytes = max_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http":
-            for name, value in scope["headers"]:
-                if name == b"content-length":
-                    try:
-                        length = int(value)
-                    except ValueError:
-                        length = 0
-                    if length > self.max_bytes:
-                        response = JSONResponse(
-                            {"detail": "The upload is too large."}, status_code=413, headers={"Connection": "close"}
-                        )
-                        await response(scope, receive, send)
-                        return
-                    break
-        await self.app(scope, receive, send)
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        for name, value in scope["headers"]:
+            if name == b"content-length":
+                try:
+                    length = int(value)
+                except ValueError:
+                    length = 0
+                if length > self.max_bytes:
+                    response = JSONResponse({"detail": TOO_LARGE}, status_code=413, headers={"Connection": "close"})
+                    await response(scope, receive, send)
+                    return
+                break
+
+        received = 0
+
+        async def counting_receive() -> Message:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    # An HTTPException passes through FastAPI's body parsing unchanged and becomes the 413 response
+                    # (or, if a response had already started, the connection is closed).
+                    raise HTTPException(status_code=413, detail=TOO_LARGE, headers={"Connection": "close"})
+            return message
+
+        await self.app(scope, counting_receive, send)

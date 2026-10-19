@@ -31,13 +31,16 @@ Check Oracle's current Always Free page before you start: the limits below are f
 
 | Resource | Used here | Always Free allowance (at the time of writing) |
 | --- | --- | --- |
-| Ampere A1 compute | 1 VM, 2 OCPUs, 12 GB RAM | 4 OCPUs and 24 GB RAM in total |
+| Ampere A1 compute | 1 VM, 2 OCPUs, 12 GB RAM | 1,500 OCPU-hours and 9,000 GB-hours a month: 2 OCPUs and 12 GB RAM in total, running all month |
 | Boot + block volumes | ~50 GB boot + 100 GB data | 200 GB in total |
 | Object Storage | encrypted backups | 20 GB, 50,000 requests a month |
 | Outbound data | the app's traffic | 10 TB a month |
 | Public IPv4 | 1 (attached to the VM) | – |
 
 Always Free resources only exist in your **home region**, and you choose that once, when you sign up.
+
+**The 2 OCPU / 12 GB VM is the whole A1 allowance.** Oracle cut it from 4 OCPUs / 24 GB: do not make the VM bigger
+or add a second A1 instance. On a free (not Pay As You Go) account, an instance over the limit gets shut down.
 
 ### What you need before you start
 
@@ -108,7 +111,8 @@ Compute → **Instances** → *Create instance*:
 3. **Image and shape** → *Edit*:
    - *Change image* → **Canonical Ubuntu 24.04** (the aarch64 build is picked automatically for Ampere).
    - *Change shape* → **Ampere** → `VM.Standard.A1.Flex`, **2 OCPUs, 12 GB memory**. It shows "Always Free-eligible".
-     (You can use up to 4 OCPUs / 24 GB for free; 2 / 12 is plenty and leaves room for later.)
+     (2 OCPUs / 12 GB is now the whole Always Free A1 allowance, 1,500 OCPU-hours and 9,000 GB-hours a month. Do
+     not go bigger: on a free account an instance over the limit gets shut down.)
 4. **Networking**: `medical-records-vcn`, its **public subnet**, *Automatically assign public IPv4 address*: yes.
 5. **Add SSH keys** → *Paste public keys* → the line from A5.
 6. **Boot volume**: keep the default size (about 47–50 GB) and in-transit encryption on.
@@ -265,6 +269,7 @@ sudo install -d -m 700 -o medical-records -g medical-records /srv/medical-record
 sudo git clone https://github.com/namsey/medical-records /opt/medical-records
 sudo chown -R ubuntu:ubuntu /opt/medical-records     # you build as "ubuntu"; the app only reads it
 cd /opt/medical-records
+git fetch --tags && git checkout vX.Y.Z              # a tagged release (see C1), not whatever is on main
 
 python3 -m venv backend/.venv
 backend/.venv/bin/pip install -r backend/requirements.txt
@@ -296,6 +301,7 @@ BACKUP_STATUS_DIR=/var/lib/medical-records-backup
 GRIEVANCE_NAME=<your name>
 GRIEVANCE_EMAIL=<email for privacy questions>
 # Optional: DEFAULT_QUOTA_MB=100   MAX_UPLOAD_SIZE_MB=20   CLAMAV_SOCKET=/run/clamav/clamd.ctl (C6)
+#           SESSION_IDLE_HOURS=24   (sign out after a day unused; sign-ins end after 14 days in any case)
 ```
 
 The app refuses to start if a required setting is missing or if `GOOGLE_REDIRECT_URI` is not `https://`.
@@ -486,13 +492,17 @@ Then invite people from **Profile → Admin** (see the README, "Inviting people"
 ```bash
 sudo systemctl start medical-records-backup.service  # a fresh backup first
 cd /opt/medical-records
-git pull
+git fetch --tags && git checkout vX.Y.Z              # the new release
 backend/.venv/bin/pip install -r backend/requirements.txt
 cd frontend && npm ci && npm run build && cd ..
 sudo cp deploy/systemd/*.service deploy/systemd/*.timer /etc/systemd/system/ && sudo systemctl daemon-reload
 sudo systemctl restart medical-records
 curl -s https://records.yourname.in/api/health       # {"status":"ok"}
 ```
+
+Deploy only tagged releases. To make one, on your own computer, after CI is green on `main`:
+`git checkout main && git pull && git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`. `git tag` on the server
+lists the releases; `git describe --tags` shows the one that is running.
 
 Database migrations run by themselves when the app starts. Before changing the database, the app saves a copy to
 `/srv/medical-records/data/backups/pre-<revision>-<time>.db`.
@@ -567,8 +577,9 @@ everyone is signed out.
   over 7 days; check the current rules). The `app` monitor tells you if it happens; start the instance again from
   the console. Upgrading to Pay As You Go (A1) avoids this for free-tier resources, according to Oracle's
   documentation at the time of writing.
-- **Stay within the limits:** one A1 VM (up to 4 OCPUs / 24 GB), boot + block volumes up to 200 GB, Object Storage
-  up to 20 GB. The budget alert (A2) catches mistakes.
+- **Stay within the limits:** one A1 VM of 2 OCPUs / 12 GB (the whole allowance: 1,500 OCPU-hours and 9,000
+  GB-hours a month; on a free account an instance over it gets shut down), boot + block volumes up to 200 GB, Object
+  Storage up to 20 GB. The budget alert (A2) catches mistakes.
 - **Storage growth:** each account has a 100 MB storage limit by default (`DEFAULT_QUOTA_MB`). Thousands of
   accounts could outgrow the free 100 GB volume and 20 GB of backups; watch **Admin → Server** and
   `restic stats`, and plan paid storage before that.
