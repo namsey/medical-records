@@ -6,11 +6,13 @@ and keeps everything on your own machine (SQLite database plus a local files fol
 
 **Workflow:** Add → Upload → Organise → Search → View → Download
 
-- Sign-in with **Google only**, restricted to one allowed Gmail account. No passwords, no registration.
+- Sign-in with **Google only**: the admin, plus people the admin invites. No passwords, no open registration.
 - Records: Doctor Visit, Prescription (multiple medicines), Lab Report (optional individual results),
   Diagnosis, Medical Document, Scan, Other. Tags, doctor and laboratory directories.
-- Attach PDF / JPG / PNG / WEBP files. PDFs and images open **inside the app** (no download needed),
-  including on Android where the browser cannot show PDFs by itself.
+- Attach PDF / JPG / PNG / HEIC (iPhone photo) files, up to 20 MB each and 100 MB per account by default
+  (`DEFAULT_QUOTA_MB`; the admin can change it per account). PDFs and images open **inside the app** (no download
+  needed), including on Android where the browser cannot show PDFs by itself. HEIC photos are downloaded instead
+  where the browser cannot show them. WEBP files stored before are still shown, but new ones are not accepted.
 - Case-insensitive search across doctors, hospitals, labs, diagnoses, medicines, test names, titles, notes and
   tags, with filters for record type, date range and tags. Newest first.
 - Chronological timeline, full backup (ZIP) and JSON export.
@@ -254,7 +256,12 @@ SQLite must not live on a network file system (NFS).
 - **Profile → Sign out of all devices** ends every session of your account, for a lost phone or a shared computer.
 - Uploaded files live outside any public folder and are only served through authenticated endpoints. Stored names are
   random UUIDs, paths are checked to stay inside the user's files folder, and the file type is verified from the file's
-  actual contents (not its name or the browser's claim). Size is limited by `MAX_UPLOAD_SIZE_MB`.
+  actual contents (not its name or the browser's claim). Size is limited by `MAX_UPLOAD_SIZE_MB` per file and by
+  each account's storage limit, checked while the file streams in. Files are served with their real type, `nosniff`,
+  a download/inline `Content-Disposition` and `Content-Security-Policy: default-src 'none'; sandbox`, so even a
+  disguised HTML or SVG file could never run.
+- Optional virus scan: set `CLAMAV_SOCKET` to clamd's socket and every upload is scanned first. If the scanner is
+  switched on but not answering, uploads are refused rather than let through (see DEPLOY.md).
 - Security headers (CSP, `nosniff`, frame protection, no referrer, `no-store` for API responses). The interactive
   API docs are disabled.
 - All database access goes through SQLAlchemy with bound parameters. Error messages and logs never include record
@@ -267,7 +274,8 @@ SQLite must not live on a network file system (NFS).
 - Backups are plain (unencrypted) ZIP files, and there is no in-app restore button (see the steps above).
 - Search is a case-insensitive substring match on the text you entered; it does not understand synonyms.
 - Case-insensitive matching in SQLite covers English letters; accented characters match case-sensitively.
-- Uploads are limited to PDF, JPG, JPEG, PNG and WEBP (for example, iPhone HEIC photos must be converted first).
+- Uploads are limited to PDF, JPG, JPEG, PNG and HEIC. Chrome and most Android browsers cannot display HEIC, so those
+  photos are offered as a download.
 - Not built in the MVP, by design: OCR, AI summaries, natural-language search, result graphs, medication history,
   PWA/offline mode and encrypted backups.
 

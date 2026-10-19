@@ -294,13 +294,30 @@ describe('adding a record', () => {
   })
 
   it('rejects unsupported attachments before uploading', async () => {
-    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 1, allowed_extensions: ['.pdf', '.jpg', '.jpeg', '.png', '.webp'] } })
+    mockApi({ ...authed, 'GET /api/doctors': [], 'GET /api/tags': [], 'GET /api/config': { max_upload_mb: 1, allowed_extensions: ['.pdf', '.jpg', '.jpeg', '.png', '.heic', '.heif'] } })
     renderApp('/add/doctor_visit')
     const input = (await screen.findByText('Choose files')).closest('div')!.parentElement!.querySelector('input[type=file]') as HTMLInputElement
     const user = userEvent.setup({ applyAccept: false })
     await user.upload(input, [new File(['x'], 'notes.txt', { type: 'text/plain' }), new File(['%PDF'], 'ok.pdf', { type: 'application/pdf' })])
     expect(await screen.findByRole('alert')).toHaveTextContent('notes.txt')
     expect(screen.getByText('ok.pdf')).toBeInTheDocument()
+  })
+
+  it('accepts iPhone HEIC photos and refuses files that would not fit in the storage left', async () => {
+    mockApi({
+      ...authed,
+      'GET /api/doctors': [],
+      'GET /api/tags': [],
+      'GET /api/config': { max_upload_mb: 20, allowed_extensions: ['.pdf', '.jpg', '.jpeg', '.png', '.heic', '.heif'] },
+      'GET /api/storage': { used_bytes: 100 * 1024 * 1024 - 1500, quota_bytes: 100 * 1024 * 1024 },
+    })
+    renderApp('/add/doctor_visit')
+    expect(await screen.findByText(/PDF, JPG, PNG or HEIC/)).toBeInTheDocument()
+    const input = (await screen.findByText('Choose files')).closest('div')!.parentElement!.querySelector('input[type=file]') as HTMLInputElement
+    const user = userEvent.setup({ applyAccept: false })
+    await user.upload(input, [new File(['x'.repeat(1000)], 'photo.heic', { type: 'image/heic' }), new File(['x'.repeat(1000)], 'second.pdf', { type: 'application/pdf' })])
+    expect(await screen.findByRole('alert')).toHaveTextContent('second.pdf: not enough storage left (500 B free).')
+    expect(screen.getByText('photo.heic')).toBeInTheDocument()
   })
 
   it('closes an untouched form without asking', async () => {
@@ -562,6 +579,14 @@ describe('profile', () => {
     expect(calls.some((c) => c.method === 'POST' && c.path === '/api/auth/logout')).toBe(true)
   })
 
+  it('shows how much storage is used', async () => {
+    mockApi({ ...authed, 'GET /api/storage': { used_bytes: 95 * 1024 * 1024, quota_bytes: 100 * 1024 * 1024 } })
+    renderApp('/profile')
+    expect(await screen.findByText('95.0 MB of 100.0 MB used')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: 'Storage used' })).toHaveAttribute('aria-valuenow', '95')
+    expect(screen.getByText(/almost full/i)).toBeInTheDocument()
+  })
+
   it('signs out of all devices after confirming', async () => {
     const calls = mockApi({ ...authed, 'POST /api/auth/logout-all': { ok: true } })
     renderApp('/profile')
@@ -616,8 +641,8 @@ describe('admin', () => {
   const admin = { 'GET /api/auth/me': ADMIN }
   const invite = { id: 'i1', email: 'friend@example.com', status: 'pending', created_at: '2026-10-19T10:00:00Z', expires_at: '2026-10-26T10:00:00Z', used_at: null }
   const accounts = [
-    { id: 'u1', email: 'naman@example.com', name: 'Naman', is_admin: true, disabled: false, created_at: '2026-01-01T00:00:00Z', last_login_at: '2026-10-19T09:00:00Z', file_count: 0, storage_bytes: 0 },
-    { id: 'u2', email: 'friend@example.com', name: 'Friend', is_admin: false, disabled: false, created_at: '2026-10-19T00:00:00Z', last_login_at: null, file_count: 3, storage_bytes: 3 * 1024 * 1024 },
+    { id: 'u1', email: 'naman@example.com', name: 'Naman', is_admin: true, disabled: false, created_at: '2026-01-01T00:00:00Z', last_login_at: '2026-10-19T09:00:00Z', file_count: 0, storage_bytes: 0, quota_bytes: 100 * 1024 * 1024, quota_is_default: true },
+    { id: 'u2', email: 'friend@example.com', name: 'Friend', is_admin: false, disabled: false, created_at: '2026-10-19T00:00:00Z', last_login_at: null, file_count: 3, storage_bytes: 3 * 1024 * 1024, quota_bytes: 100 * 1024 * 1024, quota_is_default: true },
   ]
 
   it('is linked from Profile only for the admin', async () => {
@@ -676,11 +701,23 @@ describe('admin', () => {
   it('lists accounts with storage, and disables one', async () => {
     const calls = mockApi({ ...admin, 'GET /api/admin/invites': [], 'GET /api/admin/users': accounts, 'POST /api/admin/users/u2/disable': () => ({ status: 204 }) })
     renderApp('/admin')
-    expect(await screen.findByText(paragraph('Never signed in · 3 files · 3.0 MB'))).toBeInTheDocument()
+    expect(await screen.findByText(paragraph('Never signed in · 3 files · 3.0 MB of 100.0 MB'))).toBeInTheDocument()
     // The admin's own account has no disable or delete buttons.
     expect(screen.queryByRole('button', { name: 'Disable naman@example.com' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Disable friend@example.com' }))
     await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.path === '/api/admin/users/u2/disable')).toBe(true))
+  })
+
+  it('changes an account storage limit', async () => {
+    const calls = mockApi({ ...admin, 'GET /api/admin/invites': [], 'GET /api/admin/users': accounts, 'PUT /api/admin/users/u2/quota': () => ({ status: 204 }) })
+    renderApp('/admin')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Change storage limit for friend@example.com' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Storage limit' })
+    expect(within(dialog).getByRole('button', { name: 'Use default' })).toBeDisabled()
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('New limit in MB'), '250')
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT')?.body).toEqual({ quota_mb: 250 }))
   })
 
   it('deletes an account only after its email is typed', async () => {

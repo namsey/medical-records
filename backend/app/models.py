@@ -67,6 +67,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     disabled_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    quota_bytes: Mapped[int | None] = mapped_column(Integer)  # None: DEFAULT_QUOTA_MB
 
 
 class Invite(Base):

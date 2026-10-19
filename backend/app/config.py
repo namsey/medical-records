@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     files_dir: str = "data/files"
     upload_dir: str = "data/uploads"  # old layout, only read to move files into files_dir
     max_upload_size_mb: int = Field(default=20, ge=1, le=500)
+    default_quota_mb: int = Field(default=100, ge=1, le=1_000_000)  # per account, unless the admin sets another
+    clamav_socket: str = ""  # e.g. /run/clamav/clamd.ctl: scan every upload with ClamAV
     session_max_age_days: int = Field(default=14, ge=1, le=365)
 
     @property
@@ -45,6 +47,10 @@ class Settings(BaseSettings):
         """The app's public address (scheme and host), taken from the OAuth redirect URI."""
         parts = urlsplit(self.google_redirect_uri.strip())
         return f"{parts.scheme}://{parts.netloc}"
+
+    @property
+    def default_quota_bytes(self) -> int:
+        return self.default_quota_mb * 1024 * 1024
 
     @property
     def max_upload_bytes(self) -> int:

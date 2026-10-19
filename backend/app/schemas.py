@@ -317,6 +317,15 @@ class UserOut(BaseModel):
     is_admin: bool = False
 
 
+class StorageOut(BaseModel):
+    used_bytes: int
+    quota_bytes: int
+
+
+class QuotaIn(BaseModel):
+    quota_mb: int | None = Field(default=None, ge=1, le=1_000_000)  # None: back to the default
+
+
 class InviteCheck(BaseModel):
     valid: bool
 
@@ -353,6 +362,8 @@ class AdminUserOut(BaseModel):
     last_login_at: datetime | None
     file_count: int
     storage_bytes: int
+    quota_bytes: int
+    quota_is_default: bool
 
 
 class DeleteUserIn(BaseModel):

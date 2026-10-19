@@ -4,8 +4,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/Modal'
-import { useLogout, useLogoutAll, useMe } from '@/hooks/queries'
+import { useLogout, useLogoutAll, useMe, useStorageUse } from '@/hooks/queries'
 import { errorMessage } from '@/lib/api'
+import { formatFileSize } from '@/lib/format'
 
 function MenuLink({ to, icon: Icon, title, hint }: { to: string; icon: LucideIcon; title: string; hint: string }) {
   return (
@@ -36,6 +37,36 @@ function DownloadLink({ href, icon: Icon, title, hint }: { href: string; icon: L
   )
 }
 
+function StorageBar() {
+  const { data } = useStorageUse()
+  if (!data) return null
+  const percent = data.quota_bytes > 0 ? Math.min(100, Math.round((data.used_bytes / data.quota_bytes) * 100)) : 100
+  const nearlyFull = percent >= 90
+  return (
+    <section className="card space-y-2 p-4" aria-labelledby="storage-heading">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 id="storage-heading" className="font-semibold">
+          Storage
+        </h2>
+        <p className="text-sm text-muted">
+          {formatFileSize(data.used_bytes)} of {formatFileSize(data.quota_bytes)} used
+        </p>
+      </div>
+      <div
+        role="progressbar"
+        aria-label="Storage used"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        className="h-2.5 overflow-hidden rounded-full bg-wash"
+      >
+        <div className={`h-full rounded-full ${nearlyFull ? 'bg-amber-600' : 'bg-brand-700'}`} style={{ width: `${percent}%` }} />
+      </div>
+      {nearlyFull && <p className="text-sm text-amber-800">Almost full. Delete files you no longer need, or ask the admin for more space.</p>}
+    </section>
+  )
+}
+
 export function ProfilePage() {
   const { data: user } = useMe()
   const logout = useLogout()
@@ -46,6 +77,8 @@ export function ProfilePage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Profile" subtitle={user?.email} />
+
+      <StorageBar />
 
       <section className="space-y-3" aria-label="Browse">
         <MenuLink to="/timeline" icon={CalendarClock} title="Timeline" hint="Everything in date order" />

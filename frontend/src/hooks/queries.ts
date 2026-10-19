@@ -15,6 +15,7 @@ import type {
   RecordInput,
   RecordPage,
   RecordType,
+  StorageUse,
   TagCount,
   YearCount,
   TimelineItem,
@@ -129,6 +130,15 @@ export function useSetUserDisabled() {
   })
 }
 
+export function useSetQuota() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, quotaMb }: { id: string; quotaMb: number | null }) =>
+      request<void>(`/api/admin/users/${id}/quota`, { method: 'PUT', json: { quota_mb: quotaMb } }),
+    onSuccess: () => Promise.all([queryClient.invalidateQueries({ queryKey: ADMIN_USERS_KEY }), queryClient.invalidateQueries({ queryKey: ['storage'] })]),
+  })
+}
+
 export function useDeleteUser() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -174,7 +184,7 @@ export function useInvalidateRecordData() {
   const queryClient = useQueryClient()
   return () =>
     Promise.all(
-      [['records'], ['record'], ['timeline'], ['tags'], ['years'], ['doctors'], ['labs']].map((queryKey) =>
+      [['records'], ['record'], ['timeline'], ['tags'], ['years'], ['doctors'], ['labs'], ['storage']].map((queryKey) =>
         queryClient.invalidateQueries({ queryKey }),
       ),
     )
@@ -316,6 +326,10 @@ export function useTimeline(types: RecordType[]) {
       return request<TimelineItem[]>(`/api/timeline?${params}`, { signal })
     },
   })
+}
+
+export function useStorageUse() {
+  return useQuery({ queryKey: ['storage'], queryFn: ({ signal }) => request<StorageUse>('/api/storage', { signal }) })
 }
 
 export interface AppConfig {

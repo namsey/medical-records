@@ -16,6 +16,8 @@ MAX_FILES_PER_REQUEST = 20
 FILE_HEADERS = {
     "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
+    # Even if a file ever held HTML or SVG, opening it directly could not run anything.
+    "Content-Security-Policy": "default-src 'none'; sandbox",
 }
 
 

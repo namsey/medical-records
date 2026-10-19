@@ -6,7 +6,7 @@ import pytest
 from app.config import get_settings
 from app.database import SessionLocal
 from app.models import Document, User
-from tests.conftest import JPEG_BYTES, PDF_BYTES, PNG_BYTES, WEBP_BYTES
+from tests.conftest import HEIC_BYTES, JPEG_BYTES, PDF_BYTES, PNG_BYTES
 
 
 def upload(client, record_id, name, content, content_type="application/octet-stream"):
@@ -24,7 +24,8 @@ def stored_files() -> list[Path]:
         ("photo.jpg", JPEG_BYTES, "image/jpeg", ".jpg"),
         ("photo.JPEG", JPEG_BYTES, "image/jpeg", ".jpg"),
         ("scan.png", PNG_BYTES, "image/png", ".png"),
-        ("scan.webp", WEBP_BYTES, "image/webp", ".webp"),
+        ("photo.heic", HEIC_BYTES, "image/heic", ".heic"),
+        ("photo.HEIF", HEIC_BYTES, "image/heic", ".heic"),
     ],
 )
 def test_upload_allowed_types(client, make_record, name, content, mime, ext):

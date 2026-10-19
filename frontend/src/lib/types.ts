@@ -40,6 +40,13 @@ export interface AdminUser {
   last_login_at: string | null
   file_count: number
   storage_bytes: number
+  quota_bytes: number
+  quota_is_default: boolean
+}
+
+export interface StorageUse {
+  used_bytes: number
+  quota_bytes: number
 }
 
 export interface Doctor {

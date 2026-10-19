@@ -6,7 +6,7 @@ import { TextInput } from '@/components/ui/Field'
 import { CardSkeletons, ErrorMessage } from '@/components/ui/feedback'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
-import { useAdminInvites, useAdminUsers, useCreateInvite, useDeleteUser, useMe, useRevokeInvite, useSetUserDisabled } from '@/hooks/queries'
+import { useAdminInvites, useAdminUsers, useCreateInvite, useDeleteUser, useMe, useRevokeInvite, useSetQuota, useSetUserDisabled } from '@/hooks/queries'
 import { errorMessage } from '@/lib/api'
 import { formatDate, formatFileSize, pluralize } from '@/lib/format'
 import type { AdminUser, CreatedInvite, Invite, InviteStatus } from '@/lib/types'
@@ -199,11 +199,67 @@ function DeleteUserDialog({ user, onClose }: { user: AdminUser | null; onClose: 
   )
 }
 
+function QuotaDialog({ user, onClose }: { user: AdminUser | null; onClose: () => void }) {
+  const [megabytes, setMegabytes] = useState('')
+  const setQuota = useSetQuota()
+  const toast = useToast()
+  const { reset } = setQuota
+  // Stable, because Modal re-focuses its panel whenever onClose changes (which would steal focus from the input).
+  const close = useCallback(() => {
+    setMegabytes('')
+    reset()
+    onClose()
+  }, [reset, onClose])
+  const value = Number(megabytes)
+  const valid = Number.isInteger(value) && value >= 1
+
+  function save(quotaMb: number | null) {
+    if (!user) return
+    setQuota.mutate(
+      { id: user.id, quotaMb },
+      {
+        onSuccess: () => {
+          toast.success('Storage limit changed')
+          close()
+        },
+      },
+    )
+  }
+
+  return (
+    <Modal open={user !== null} title="Storage limit" onClose={close}>
+      <p className="text-base text-muted">
+        <span className="font-semibold text-ink">{user?.email}</span> uses {formatFileSize(user?.storage_bytes ?? 0)} of{' '}
+        {formatFileSize(user?.quota_bytes ?? 0)}
+        {user?.quota_is_default ? ' (the default)' : ''}. Lowering the limit never deletes files; it only stops new uploads.
+      </p>
+      <div className="mt-4">
+        <TextInput label="New limit in MB" type="number" inputMode="numeric" min={1} value={megabytes} onChange={(e) => setMegabytes(e.target.value)} />
+      </div>
+      {setQuota.isError && (
+        <p role="alert" className="mt-3 rounded-xl bg-danger-50 p-3 text-sm text-danger-700">
+          {errorMessage(setQuota.error)}
+        </p>
+      )}
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        <Button variant="secondary" onClick={() => save(null)} disabled={setQuota.isPending || user?.quota_is_default}>
+          Use default
+        </Button>
+        <Button onClick={() => save(value)} disabled={!valid} loading={setQuota.isPending}>
+          Save
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
 function UserList() {
   const { data: users, isPending, isError, error, refetch } = useAdminUsers()
   const setDisabled = useSetUserDisabled()
   const [deleting, setDeleting] = useState<AdminUser | null>(null)
   const closeDelete = useCallback(() => setDeleting(null), [])
+  const [changingQuota, setChangingQuota] = useState<AdminUser | null>(null)
+  const closeQuota = useCallback(() => setChangingQuota(null), [])
   const toast = useToast()
 
   if (isPending) return <CardSkeletons count={2} />
@@ -224,15 +280,18 @@ function UserList() {
                 <p className="text-sm text-muted">
                   {user.last_login_at ? `Last sign-in ${formatDate(user.last_login_at)}` : 'Never signed in'} ·{' '}
                   <span className="whitespace-nowrap">
-                    {pluralize(user.file_count, 'file')} · {formatFileSize(user.storage_bytes)}
+                    {pluralize(user.file_count, 'file')} · {formatFileSize(user.storage_bytes)} of {formatFileSize(user.quota_bytes)}
                   </span>
                 </p>
               </div>
               {user.is_admin && <Badge className="bg-brand-50 text-brand-800">Admin</Badge>}
               {user.disabled && <Badge className="bg-danger-50 text-danger-700">Disabled</Badge>}
             </div>
+            <Button size="sm" variant="ghost" className="mt-2 w-full" onClick={() => setChangingQuota(user)} aria-label={`Change storage limit for ${user.email}`}>
+              Change storage limit
+            </Button>
             {!user.is_admin && (
-              <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="mt-2 grid grid-cols-2 gap-3">
                 <Button
                   size="sm"
                   variant="secondary"
@@ -259,6 +318,7 @@ function UserList() {
         ))}
       </ul>
       <DeleteUserDialog user={deleting} onClose={closeDelete} />
+      <QuotaDialog user={changingQuota} onClose={closeQuota} />
     </>
   )
 }

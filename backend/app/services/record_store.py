@@ -4,6 +4,7 @@ Every store is bound to one user, so a query can only ever see that user's rows.
 another user looks exactly like something that does not exist (404). The only implementation is SQLite.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
@@ -16,12 +17,24 @@ from app.database import get_db
 from app.models import Doctor, Document, Lab, MedicalRecord, Tag, User, record_tags
 from app.schemas import RecordIn
 from app.security import get_current_user
-from app.services import backup
+from app.services import backup, storage
 from app.services import records as record_service
 from app.services.search import RecordFilters, search_records
 from app.services.storage import FileStore, get_file_store
 
 Owned = TypeVar("Owned", Doctor, Lab)
+
+_upload_locks: dict[str, asyncio.Lock] = {}
+
+
+def _upload_lock(user_id: str) -> asyncio.Lock:
+    return _upload_locks.setdefault(user_id, asyncio.Lock())
+
+
+def formatted_size(size: int) -> str:
+    if size < 1024 * 1024:
+        return f"{size / 1024:.0f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
 
 
 class RecordStore(Protocol):
@@ -39,6 +52,7 @@ class RecordStore(Protocol):
     async def add_documents(self, record: MedicalRecord, uploads: list[UploadFile]) -> list[Document]: ...
     def delete_document(self, document: Document) -> None: ...
     def storage_used_bytes(self) -> int: ...
+    def quota_bytes(self) -> int: ...
     def backup_zip(self) -> Path: ...
     def export_json(self) -> str: ...
     def list_doctors(self, q: str | None) -> list[Doctor]: ...
@@ -115,12 +129,35 @@ class SqlRecordStore:
         """Where the document's file is (it may be missing)."""
         return self.files.path(self.user_id, document.stored_filename)
 
+    def quota_bytes(self) -> int:
+        user = self.db.get(User, self.user_id)
+        return storage.quota_bytes(user.quota_bytes if user else None)
+
     async def add_documents(self, record: MedicalRecord, uploads: list[UploadFile]) -> list[Document]:
-        """Store the files and their rows on the user's record. All are stored or none are."""
+        """Store the files and their rows on the user's record, within the account's storage limit.
+        All are stored or none are."""
+        # One upload at a time per account, so two at once cannot both fit into the same free space.
+        async with _upload_lock(self.user_id):
+            return await self._add_documents(record, uploads)
+
+    async def _add_documents(self, record: MedicalRecord, uploads: list[UploadFile]) -> list[Document]:
+        quota = self.quota_bytes()
+        used = self.storage_used_bytes()
         saved: list[Document] = []
         try:
             for upload in uploads:
-                stored = await self.files.save(self.user_id, upload)
+                space_left = quota - used - sum(document.size_bytes for document in saved)
+                try:
+                    if space_left <= 0:
+                        raise storage.NotEnoughSpace(storage.sanitize_filename(upload.filename))
+                    stored = await self.files.save(self.user_id, upload, space_left=space_left)
+                except storage.NotEnoughSpace as error:
+                    free = formatted_size(max(quota - used, 0))
+                    raise HTTPException(
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                        detail=f"Not enough storage left for '{error.display_name}': {free} free of "
+                        f"{formatted_size(quota)}.",
+                    ) from error
                 saved.append(
                     Document(
                         record_id=record.id,

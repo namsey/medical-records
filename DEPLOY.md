@@ -184,6 +184,27 @@ A backup is only useful if it restores. Do this monthly, and always after changi
 To roll back on a working server (for example after a bad change), `restore.sh --apply <snapshot id>` does the
 same. The data it replaces is moved to `DATA_DIR.before-restore-<time>`, never deleted.
 
+## 7. Optional: virus scan of uploads (ClamAV)
+
+Off by default. When it is on, every uploaded file is scanned before it is saved. If the scanner does not answer,
+the upload is refused (never saved unscanned). clamd needs about 1 GB of RAM.
+
+```bash
+sudo apt-get install -y clamav-daemon
+sudo systemctl enable --now clamav-freshclam clamav-daemon     # signatures update by themselves
+sudo usermod -aG clamav <the user the app runs as>              # so the app can use clamd's socket
+```
+
+Then add `CLAMAV_SOCKET=/run/clamav/clamd.ctl` to the app's environment and restart it. To check it:
+
+1. clamd itself: download the harmless EICAR test file from eicar.org and run `clamdscan eicar.com`; it must say
+   `FOUND`. (Uploading it to the app is not a useful test: the app refuses it earlier, because it is not a real
+   PDF or image.)
+2. The app's connection: upload an ordinary PDF. It only saves if clamd answered, and if it cannot reach clamd the
+   app says "The virus scanner is not available" and logs "Virus scanner unavailable".
+
+clamd's default stream limit (25 MB) is above the 20 MB file limit.
+
 ## Notes
 
 - Restoring the server's backup brings back **all users' data** as it was at that time. It is not a way to

@@ -13,7 +13,7 @@ from app.models import Document, Invite, MedicalRecord, User, utcnow
 from app.schemas import AdminUserOut, InviteCreated, InviteOut
 from app.security import require_admin
 from app.services import invites, sessions
-from app.services.storage import FileStore, get_file_store
+from app.services.storage import FileStore, get_file_store, quota_bytes
 
 
 def _invite_out(invite: Invite) -> InviteOut:
@@ -74,6 +74,8 @@ class AdminStore:
                 last_login_at=user.last_login_at,
                 file_count=file_count or 0,
                 storage_bytes=storage_bytes or 0,
+                quota_bytes=quota_bytes(user.quota_bytes),
+                quota_is_default=user.quota_bytes is None,
             )
             for user, file_count, storage_bytes in rows
         ]
@@ -85,6 +87,14 @@ class AdminStore:
         if user.id == self.admin.id or sessions.is_admin(user):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An admin account cannot be changed here")
         return user
+
+    def set_quota(self, user_id: str, quota_mb: int | None) -> None:
+        """Change an account's storage limit (None: back to the default). Lowering it never deletes files."""
+        user = self.db.get(User, user_id)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+        user.quota_bytes = None if quota_mb is None else quota_mb * 1024 * 1024
+        self.db.commit()
 
     def set_disabled(self, user_id: str, disabled: bool) -> None:
         user = self._changeable_user(user_id)

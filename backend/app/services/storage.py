@@ -25,28 +25,35 @@ from starlette.datastructures import UploadFile
 
 from app.config import get_settings
 from app.models import Document, MedicalRecord
+from app.services import virus_scan
 
 logger = logging.getLogger(__name__)
 
-# content type -> canonical extension
+# What can be uploaded: content type -> canonical extension. (WEBP files stored before #42 are still served.)
 ALLOWED_TYPES: dict[str, str] = {
     "application/pdf": ".pdf",
     "image/jpeg": ".jpg",
     "image/png": ".png",
-    "image/webp": ".webp",
+    "image/heic": ".heic",
 }
 ALLOWED_EXTENSIONS: dict[str, str] = {
     ".pdf": "application/pdf",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".png": "image/png",
-    ".webp": "image/webp",
+    ".heic": "image/heic",
+    ".heif": "image/heic",
 }
+ALLOWED_LABEL = "PDF, JPG, PNG, HEIC"
+# ISO-BMFF brands of HEIC/HEIF photos (iPhone camera). AVIF uses the same container and is not accepted.
+HEIC_BRANDS = {b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx"}
+HEIF_GENERIC_BRANDS = {b"mif1", b"msf1"}
+SNIFF_BYTES = 64
 
 # Type folders of the old UPLOAD_DIR layout, only read when moving files to the per-user layout.
 LEGACY_FOLDERS = {"prescriptions", "lab_reports", "medical_documents", "scans", "other"}
 
-_STORED_NAME_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png|webp)$")
+_STORED_NAME_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png|webp|heic)$")
 _USER_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 CHUNK_SIZE = 1024 * 1024
@@ -62,7 +69,21 @@ def sniff_content_type(head: bytes) -> str | None:
         return "image/png"
     if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
         return "image/webp"
+    if _is_heic(head):
+        return "image/heic"
     return None
+
+
+def _is_heic(head: bytes) -> bool:
+    """An ISO-BMFF `ftyp` box whose brands say HEIC/HEIF (and not AVIF)."""
+    if len(head) < 16 or head[4:8] != b"ftyp":
+        return False
+    box_size = int.from_bytes(head[:4], "big")
+    major = head[8:12]
+    compatible = {head[i : i + 4] for i in range(16, min(box_size, len(head)) - 3, 4)}
+    if b"avif" in compatible or major == b"avif":
+        return False
+    return major in HEIC_BRANDS or (major in HEIF_GENERIC_BRANDS and bool(compatible & HEIC_BRANDS))
 
 
 def sanitize_filename(raw: str | None) -> str:
@@ -84,20 +105,20 @@ def remove_file(path: Path) -> None:
 
 async def _validated_type(upload: UploadFile, display_name: str) -> tuple[str, str]:
     """The real content type (from the file's first bytes) and the display name, with an extension added if needed."""
-    head = await upload.read(16)
+    head = await upload.read(SNIFF_BYTES)
     await upload.seek(0)
     content_type = sniff_content_type(head)
-    if content_type is None:
+    if content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"'{display_name}' is not a supported file. Allowed types: PDF, JPG, JPEG, PNG, WEBP.",
+            detail=f"'{display_name}' is not a supported file. Allowed types: {ALLOWED_LABEL}.",
         )
     extension = Path(display_name).suffix.lower()
     if extension:
         if extension not in ALLOWED_EXTENSIONS:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=f"'{display_name}' has an unsupported file extension. Allowed: PDF, JPG, JPEG, PNG, WEBP.",
+                detail=f"'{display_name}' has an unsupported file extension. Allowed: {ALLOWED_LABEL}.",
             )
         if ALLOWED_EXTENSIONS[extension] != content_type:
             raise HTTPException(
@@ -106,6 +127,14 @@ async def _validated_type(upload: UploadFile, display_name: str) -> tuple[str, s
             )
         return content_type, display_name
     return content_type, f"{display_name}{ALLOWED_TYPES[content_type]}"
+
+
+class NotEnoughSpace(Exception):
+    """The file is bigger than the space left in the account."""
+
+    def __init__(self, display_name: str) -> None:
+        super().__init__(display_name)
+        self.display_name = display_name
 
 
 @dataclass
@@ -117,8 +146,9 @@ class StoredFile:
 
 
 class FileStore(Protocol):
-    async def save(self, user_id: str, upload: UploadFile) -> StoredFile:
-        """Validate and store one uploaded file. Raises HTTPException (and stores nothing) if it is not allowed."""
+    async def save(self, user_id: str, upload: UploadFile, space_left: int | None = None) -> StoredFile:
+        """Validate and store one uploaded file. Raises HTTPException, or NotEnoughSpace when it is bigger than
+        `space_left` bytes, and then stores nothing."""
         ...
 
     def path(self, user_id: str, stored_name: str) -> Path:
@@ -157,7 +187,7 @@ class LocalFileStore:
         folder.mkdir(mode=0o700, parents=True, exist_ok=True)
         return folder
 
-    async def save(self, user_id: str, upload: UploadFile) -> StoredFile:
+    async def save(self, user_id: str, upload: UploadFile, space_left: int | None = None) -> StoredFile:
         settings = get_settings()
         max_bytes = settings.max_upload_bytes
         content_type, display_name = await _validated_type(upload, sanitize_filename(upload.filename))
@@ -176,10 +206,14 @@ class LocalFileStore:
                             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                             detail=f"'{display_name}' is larger than the {settings.max_upload_size_mb} MB limit.",
                         )
+                    # Checked while streaming: a file that cannot fit stops here, not after it is all on disk.
+                    if space_left is not None and size > space_left:
+                        raise NotEnoughSpace(display_name)
                     out.write(chunk)
             if size == 0:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"'{display_name}' is empty.")
             os.chmod(destination, 0o600)
+            virus_scan.check(destination, display_name)
         except BaseException:
             remove_file(destination)
             raise
@@ -203,6 +237,11 @@ class LocalFileStore:
         folder = self.base / user_id
         if _USER_ID_RE.match(user_id) and folder.is_dir() and folder.resolve().is_relative_to(self.base):
             shutil.rmtree(folder)
+
+
+def quota_bytes(user_quota: int | None) -> int:
+    """An account's storage limit: its own, or the DEFAULT_QUOTA_MB setting."""
+    return user_quota if user_quota is not None else get_settings().default_quota_bytes
 
 
 def get_file_store() -> LocalFileStore:

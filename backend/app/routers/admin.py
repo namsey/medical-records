@@ -5,7 +5,7 @@ No route here returns another user's records or files: AdminStore only reads acc
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.schemas import AdminUserOut, DeleteUserIn, InviteCreated, InviteIn, InviteOut
+from app.schemas import AdminUserOut, DeleteUserIn, InviteCreated, InviteIn, InviteOut, QuotaIn
 from app.security import admin_dependencies
 from app.services import rate_limit
 from app.services.admin_store import AdminStore, get_admin_store
@@ -33,6 +33,12 @@ def revoke_invite(invite_id: str, store: AdminStore = Depends(get_admin_store)) 
 @router.get("/users", response_model=list[AdminUserOut])
 def list_users(store: AdminStore = Depends(get_admin_store)) -> list[AdminUserOut]:
     return store.list_users()
+
+
+@router.put("/users/{user_id}/quota", status_code=status.HTTP_204_NO_CONTENT)
+def set_quota(user_id: str, payload: QuotaIn, store: AdminStore = Depends(get_admin_store)) -> Response:
+    store.set_quota(user_id, payload.quota_mb)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/users/{user_id}/disable", status_code=status.HTTP_204_NO_CONTENT)

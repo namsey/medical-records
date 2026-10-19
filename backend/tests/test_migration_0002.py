@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from alembic import command
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, event
 
 from app.migrations import alembic_config, snapshot_before_migrations
@@ -150,7 +151,8 @@ def test_snapshot_is_taken_only_when_a_migration_is_pending(tmp_path):
 
     snapshot = snapshot_before_migrations(database, backups)
     assert snapshot is not None and snapshot.parent == backups
-    assert snapshot.name.startswith("pre-0003-")  # named after the revision it upgrades to (head)
+    head = ScriptDirectory.from_config(alembic_config()).get_current_head()
+    assert snapshot.name.startswith(f"pre-{head}-")  # named after the revision it upgrades to
     assert _rows(snapshot) == before
     assert snapshot.stat().st_mode & 0o777 == 0o600
 
