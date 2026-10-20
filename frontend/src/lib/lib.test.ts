@@ -7,6 +7,7 @@ import { RECORD_TYPES, RECORD_TYPE_INFO } from './recordTypes'
 import { suggestRecordType } from './typeSuggestion'
 import { FORM_CONFIG, changeRecordType, droppedDetails, emptyForm, emptyMedicine, formFromRecord, formToInput, validateForm } from './recordForm'
 import type { MedicalRecord, RecordSummary } from './types'
+import { readIntoMemory } from '@/components/documents/FilePicker'
 
 describe('format', () => {
   it('formats dates as local calendar dates without timezone drift', () => {
@@ -229,5 +230,23 @@ describe('record type colours', () => {
       const token = type.replace('_', '-')
       expect(RECORD_TYPE_INFO[type].tone).toBe(`bg-type-${token}-soft text-type-${token}`)
     }
+  })
+})
+
+describe('readIntoMemory', () => {
+  it('copies the file so the upload no longer depends on the picked handle', async () => {
+    const picked = new File(['%PDF-1.4 hello'], 'report.pdf', { type: 'application/pdf', lastModified: 1234 })
+    const copy = await readIntoMemory(picked)
+    expect(copy).not.toBe(picked)
+    expect(copy.name).toBe('report.pdf')
+    expect(copy.type).toBe('application/pdf')
+    expect(copy.lastModified).toBe(1234)
+    expect(await copy.text()).toBe('%PDF-1.4 hello')
+  })
+
+  it('rejects when the phone cannot read the file', async () => {
+    const broken = new File(['x'], 'drive.pdf', { type: 'application/pdf' })
+    vi.spyOn(broken, 'arrayBuffer').mockRejectedValue(new DOMException('gone', 'NotReadableError'))
+    await expect(readIntoMemory(broken)).rejects.toThrow()
   })
 })

@@ -19,6 +19,16 @@ export function checkFile(file: File, maxMb: number, extensions: string[], space
   return null
 }
 
+/**
+ * Copy a chosen file into memory. On Android a picked file (from Drive, WhatsApp, Downloads...) is only a
+ * handle that can stop working before the upload starts, and the upload then fails as if the server were
+ * unreachable. Reading it right away keeps it safe, and a file the phone cannot read is reported now.
+ */
+export async function readIntoMemory(file: File): Promise<File> {
+  const bytes = await file.arrayBuffer()
+  return new File([bytes], file.name, { type: file.type, lastModified: file.lastModified })
+}
+
 interface FilePickerProps {
   files: File[]
   onChange: (files: File[]) => void
@@ -36,18 +46,26 @@ export function FilePicker({ files, onChange, label = 'Attachments', disabled }:
   const cameraInput = useRef<HTMLInputElement>(null)
   const [problems, setProblems] = useState<string[]>([])
 
-  function accept(event: ChangeEvent<HTMLInputElement>) {
+  async function accept(event: ChangeEvent<HTMLInputElement>) {
     const chosen = Array.from(event.target.files ?? [])
     event.target.value = '' // allow choosing the same file again later
     const rejected: string[] = []
     // Space left after the files already chosen for this record.
     let spaceLeft = storage ? storage.quota_bytes - storage.used_bytes - files.reduce((sum, file) => sum + file.size, 0) : Infinity
-    const accepted = chosen.filter((file) => {
+    const checked = chosen.filter((file) => {
       const problem = checkFile(file, maxMb, extensions, spaceLeft)
       if (problem) rejected.push(problem)
       else spaceLeft -= file.size
       return !problem
     })
+    const accepted: File[] = []
+    for (const file of checked) {
+      try {
+        accepted.push(await readIntoMemory(file))
+      } catch {
+        rejected.push(`${file.name}: the phone could not open this file. If it is in Google Drive or another app, save it to the phone first and choose it again.`)
+      }
+    }
     setProblems(rejected)
     if (accepted.length) onChange([...files, ...accepted])
   }

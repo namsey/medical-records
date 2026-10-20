@@ -282,7 +282,7 @@ export function useUploadDocuments(recordId: string) {
         try {
           await uploadDocument(recordId, file)
         } catch (error) {
-          failures.push(error instanceof Error ? error.message : `Could not upload ${file.name}`)
+          failures.push(`${file.name}: ${error instanceof Error ? error.message : 'could not upload'}`)
         }
       }
       if (failures.length) throw new Error(failures.join('\n'))
