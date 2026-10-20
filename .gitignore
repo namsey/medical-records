@@ -34,3 +34,13 @@ Thumbs.db
 
 # graphify-axet
 .graphify/
+
+# Terraform (infra/): local state and variable files hold account details
+infra/.terraform/
+infra/terraform.tfstate
+infra/terraform.tfstate.*
+infra/*.tfplan
+infra/*.log
+infra/.terraform.tfstate.lock.info
+*.tfvars
+!*.tfvars.example
