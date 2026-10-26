@@ -5,12 +5,14 @@ resource "oci_identity_group" "backup_writers" {
   compartment_id = var.tenancy_ocid
   name           = "${local.name}-backup-writers"
   description    = "Writes restic backups to ${oci_objectstorage_bucket.backup.name} (the VM)"
+  freeform_tags  = merge(local.tags, { env = "prod" })
 }
 
 resource "oci_identity_group" "backup_readers" {
   compartment_id = var.tenancy_ocid
   name           = "${local.name}-backup-readers"
   description    = "Reads restic backups from ${oci_objectstorage_bucket.backup.name} (home copy)"
+  freeform_tags  = merge(local.tags, { env = "prod" })
 }
 
 resource "oci_identity_user" "backup_writer" {
@@ -18,6 +20,7 @@ resource "oci_identity_user" "backup_writer" {
   name           = "backup-writer"
   description    = "medical-records VM: restic backups"
   email          = replace(var.alert_email, "@", "+oci-backup-writer@") # identity domains require an email
+  freeform_tags  = merge(local.tags, { env = "prod" })
 }
 
 resource "oci_identity_user" "backup_reader" {
@@ -25,6 +28,7 @@ resource "oci_identity_user" "backup_reader" {
   name           = "backup-reader"
   description    = "medical-records home machine: weekly backup copy"
   email          = replace(var.alert_email, "@", "+oci-backup-reader@")
+  freeform_tags  = merge(local.tags, { env = "prod" })
 }
 
 resource "oci_identity_user_group_membership" "writer" {
@@ -41,6 +45,7 @@ resource "oci_identity_policy" "backup" {
   compartment_id = local.compartment_id
   name           = "${local.name}-backup"
   description    = "Backup access to ${oci_objectstorage_bucket.backup.name} only"
+  freeform_tags  = merge(local.tags, { env = "prod" })
 
   statements = [
     "Allow group ${oci_identity_group.backup_writers.name} to read buckets in compartment ${var.compartment_name} where target.bucket.name = '${oci_objectstorage_bucket.backup.name}'",

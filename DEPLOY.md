@@ -31,16 +31,17 @@ Check Oracle's current Always Free page before you start: the limits below are f
 
 | Resource | Used here | Always Free allowance (at the time of writing) |
 | --- | --- | --- |
-| Ampere A1 compute | 1 VM, 2 OCPUs, 12 GB RAM | 1,500 OCPU-hours and 9,000 GB-hours a month: 2 OCPUs and 12 GB RAM in total, running all month |
-| Boot + block volumes | ~50 GB boot + 100 GB data | 200 GB in total |
-| Object Storage | encrypted backups | 20 GB, 50,000 requests a month |
+| Ampere A1 compute | 2 VMs: prod 1 OCPU / 8 GB, staging 1 OCPU / 4 GB | 1,500 OCPU-hours and 9,000 GB-hours a month: 2 OCPUs and 12 GB RAM in total, running all month |
+| Boot + block volumes | 2 × 50 GB boot + 100 GB data (prod) = 200 GB | 200 GB in total |
+| Object Storage | encrypted backups (prod) | 20 GB, 50,000 requests a month |
 | Outbound data | the app's traffic | 10 TB a month |
-| Public IPv4 | 1 (attached to the VM) | – |
+| Public IPv4 | 2 reserved (one per VM) | – |
 
 Always Free resources only exist in your **home region**, and you choose that once, when you sign up.
 
-**The 2 OCPU / 12 GB VM is the whole A1 allowance.** Oracle cut it from 4 OCPUs / 24 GB: do not make the VM bigger
-or add a second A1 instance. On a free (not Pay As You Go) account, an instance over the limit gets shut down.
+**The two VMs together are the whole A1 allowance** (2 OCPUs, 12 GB, and all 200 GB of storage). Oracle cut it
+from 4 OCPUs / 24 GB: do not make either VM bigger or add a third A1 instance. On a free (not Pay As You Go)
+account, an instance over the limit gets shut down. Terraform refuses a plan that goes over these totals.
 
 ### What you need before you start
 
@@ -53,6 +54,32 @@ or add a second A1 instance. On a free (not Pay As You Go) account, an instance 
 ---
 
 ## Part A: Oracle Cloud resources (in the web console)
+
+### Two environments, created by Terraform
+
+`infra/` creates everything below for two environments, **prod** and **staging**, in one VCN (`10.0.0.0/16`):
+
+| | prod | staging |
+| --- | --- | --- |
+| VM (`VM.Standard.A1.Flex`, Ubuntu 24.04) | `medical-records-prod`: 1 OCPU, 8 GB RAM | `medical-records-staging`: 1 OCPU, 4 GB RAM |
+| Fault domain | `FAULT-DOMAIN-1` | `FAULT-DOMAIN-2` |
+| Subnet and security list | `10.0.0.0/24` | `10.0.1.0/24` |
+| Boot volume | 50 GB | 50 GB |
+| Data volume (A8) | 100 GB at `/dev/oracleoci/oraclevdb` | **none**: data lives on the boot volume |
+| Reserved public IP | yes | yes |
+| Backups (A9: bucket, users, policy) and budget (A2) | yes | **none** |
+
+Together that is 2 of 2 OCPUs, 12 of 12 GB RAM and 200 of 200 GB of boot + block storage, so there is no room to
+give staging a data volume or either VM more. The sizes are in the `environments` variable (`infra/variables.tf`),
+and `terraform plan` stops with a clear message if they go over the Always Free totals.
+
+Staging is for trying changes, with synthetic data only: it has no backups, and nothing on it is kept. It needs its
+**own domain name** (for example a second DuckDNS name, A10) and its **own Google OAuth client** (A11), so a
+staging sign-in can never be redirected to prod.
+
+You still do A1, A3, A5, A10 and A11 by hand. Copy `infra/terraform.tfvars.example` to `infra/terraform.tfvars`,
+fill it in, then run `terraform init` and `terraform plan` / `terraform apply` in `infra/`. `terraform output`
+shows each VM's public IP and SSH command. The console steps below are what Terraform does, for reference.
 
 ### A1. Create the Oracle Cloud account (home region: Mumbai)
 
@@ -93,6 +120,9 @@ compartment. Create everything below in this compartment (pick it in the *Compar
    - *Add ingress rules*: source `0.0.0.0/0`, TCP, destination port **80** (Let's Encrypt and the redirect to HTTPS).
    - *Add ingress rules*: source `0.0.0.0/0`, TCP, destination port **443** (the app).
 
+Terraform instead gives each environment its own subnet (`10.0.0.0/24` prod, `10.0.1.0/24` staging) with its own
+security list holding these three rules, and empties the default security list (no rules, attached to nothing).
+
 ### A5. SSH key (on your own computer)
 
 ```bash
@@ -106,13 +136,14 @@ Keep the private key (`~/.ssh/oracle-medical-records`) safe; it is the only way 
 
 Compute → **Instances** → *Create instance*:
 
-1. **Name** `medical-records-vm`, compartment `medical-records`.
+1. **Name** `medical-records-prod` (and `medical-records-staging`), compartment `medical-records`.
 2. **Placement**: the availability domain shown (Mumbai has one).
 3. **Image and shape** → *Edit*:
    - *Change image* → **Canonical Ubuntu 24.04** (the aarch64 build is picked automatically for Ampere).
-   - *Change shape* → **Ampere** → `VM.Standard.A1.Flex`, **2 OCPUs, 12 GB memory**. It shows "Always Free-eligible".
-     (2 OCPUs / 12 GB is now the whole Always Free A1 allowance, 1,500 OCPU-hours and 9,000 GB-hours a month. Do
-     not go bigger: on a free account an instance over the limit gets shut down.)
+   - *Change shape* → **Ampere** → `VM.Standard.A1.Flex`, **1 OCPU, 8 GB memory** for prod (**1 OCPU, 4 GB** for
+     staging). It shows "Always Free-eligible". (2 OCPUs / 12 GB in total is now the whole Always Free A1
+     allowance, 1,500 OCPU-hours and 9,000 GB-hours a month. Do not go bigger: on a free account an instance over
+     the limit gets shut down.)
 4. **Networking**: `medical-records-vcn`, its **public subnet**, *Automatically assign public IPv4 address*: yes.
 5. **Add SSH keys** → *Paste public keys* → the line from A5.
 6. **Boot volume**: keep the default size (about 47–50 GB) and in-transit encryption on.
@@ -138,11 +169,13 @@ The user on Oracle's Ubuntu images is `ubuntu`. Type `exit` to leave again.
 This disk holds the SQLite database and every uploaded file, separate from the system disk, so the app's data
 survives rebuilding or replacing the VM.
 
-1. Storage → **Block volumes** → *Create block volume*: name `medical-records-data`, compartment
+Prod only: staging has no data volume (the 200 GB are used up), so its data stays on its boot volume.
+
+1. Storage → **Block volumes** → *Create block volume*: name `medical-records-prod-data`, compartment
    `medical-records`, the **same availability domain** as the VM, size **100 GB** (boot + block volumes share the
    200 GB allowance), default performance (*Balanced*), Oracle-managed encryption key. *Create*.
-2. Compute → Instances → `medical-records-vm` → **Attached block volumes** → *Attach block volume*:
-   - Volume: `medical-records-data`.
+2. Compute → Instances → `medical-records-prod` → **Attached block volumes** → *Attach block volume*:
+   - Volume: `medical-records-prod-data`.
    - Attachment type: **Paravirtualized** (no iSCSI commands needed).
    - Device path: **`/dev/oracleoci/oraclevdb`**.
    - Access: read/write. *Attach*.
@@ -151,6 +184,8 @@ The volume is formatted and mounted on the server in step B4. Never put the SQLi
 (NFS): SQLite in WAL mode needs a local disk.
 
 ### A9. Object Storage bucket and keys for backups
+
+Prod only: staging has no backups.
 
 You need your **Object Storage namespace**: Profile menu → Tenancy → *Object storage namespace*.
 
@@ -184,8 +219,9 @@ s3:https://<namespace>.compat.objectstorage.ap-mumbai-1.oraclecloud.com/medical-
 
 ### A10. Domain name (DNS)
 
-At your domain's DNS provider, create an **A record**: `records.yourname.in` → the VM's public IP (A6). Check it
-from your computer before going on (it can take a few minutes up to a few hours):
+At your domain's DNS provider, create an **A record**: `records.yourname.in` → the VM's public IP (A6). Staging
+gets a second name (for example `staging-records.yourname.in`, or its own DuckDNS name) → the staging VM's IP.
+Check it from your computer before going on (it can take a few minutes up to a few hours):
 
 ```bash
 nslookup records.yourname.in      # must show the VM's IP
@@ -203,6 +239,8 @@ Google only confirms who is signing in; it never sees records.
 3. **Credentials → Create credentials → OAuth client ID** → *Web application*:
    - Authorized redirect URI: `https://records.yourname.in/api/auth/callback` (exactly).
    - Note the **Client ID** and **Client secret** (password manager).
+4. For staging, create a **second OAuth client** the same way, with the staging name in its redirect URI
+   (`https://staging-records.yourname.in/api/auth/callback`). Never add the staging URI to the prod client.
 
 ---
 

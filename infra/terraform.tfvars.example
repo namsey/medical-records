@@ -4,3 +4,10 @@ region              = "ap-mumbai-1"
 ssh_allowed_cidrs   = { laptop = "203.0.113.7/32" }
 ssh_public_key_path = "~/.ssh/oracle-medical-records.pub"
 alert_email         = "you@example.com"
+
+# Optional: the default is prod + staging inside the Always Free totals (see variables.tf). If you set it, give
+# every field of both environments; totals must stay at 2 OCPUs, 12 GB RAM and 200 GB of volumes.
+# environments = {
+#   prod    = { ocpus = 1, memory_gb = 8, boot_volume_gb = 50, data_volume_gb = 100, fault_domain = "FAULT-DOMAIN-1", subnet_cidr = "10.0.0.0/24", hostname = "prod" }
+#   staging = { ocpus = 1, memory_gb = 4, boot_volume_gb = 50, data_volume_gb = 0, fault_domain = "FAULT-DOMAIN-2", subnet_cidr = "10.0.1.0/24", hostname = "staging" }
+# }

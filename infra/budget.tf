@@ -8,6 +8,7 @@ resource "oci_budget_budget" "main" {
   reset_period   = "MONTHLY"
   target_type    = "COMPARTMENT"
   targets        = [local.compartment_id]
+  freeform_tags  = merge(local.tags, { env = "prod" })
 }
 
 resource "oci_budget_alert_rule" "actual_spend" {
@@ -18,4 +19,5 @@ resource "oci_budget_alert_rule" "actual_spend" {
   threshold_type = "PERCENTAGE"
   recipients     = var.alert_email
   message        = "Oracle Cloud: the medical-records compartment is costing money. Check Billing > Cost analysis."
+  freeform_tags  = merge(local.tags, { env = "prod" })
 }
