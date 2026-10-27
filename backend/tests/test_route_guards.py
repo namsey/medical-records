@@ -13,6 +13,7 @@ PUBLIC_ROUTES = {
     ("GET", "/api/health"),
     ("GET", "/api/health/disk"),  # health checks for the uptime monitor: only ok or problem
     ("GET", "/api/health/backup"),
+    ("GET", "/api/version"),  # only the build's commit and version
     ("GET", "/api/auth/login"),
     ("GET", "/api/auth/callback"),
     ("POST", "/api/auth/logout"),

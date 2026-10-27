@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     grievance_email: str = ""
     session_max_age_days: int = Field(default=14, ge=1, le=365)
     session_idle_hours: int = Field(default=24, ge=1, le=720)
+    # Containers (ctr-4). Proxies whose X-Forwarded-For is trusted for the client IP (comma-separated, or "*").
+    forwarded_allow_ips: str = "127.0.0.1"
+    # The disk checked as "system" by /api/health/disk; empty: only the data disk (inside a container).
+    system_disk_path: str = "/"
+    # On SIGTERM, requests still running (uploads) get this long to finish.
+    shutdown_grace_seconds: int = Field(default=30, ge=0, le=600)
+    # Set in the Docker image from the build (GET /api/version); "dev" when unset.
+    app_commit: str = ""
+    app_version: str = ""
 
     @property
     def admin_email_normalized(self) -> str:

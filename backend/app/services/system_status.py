@@ -32,10 +32,13 @@ class Disk:
 
 
 def disks() -> list[Disk]:
-    """Space used on the disk holding the data folder, and on the system disk."""
+    """Space used on the disk holding the data folder, and on the system disk (unless SYSTEM_DISK_PATH is empty)."""
     settings = get_settings()
+    checked = [("data", settings.sqlite_path.parent)]
+    if settings.system_disk_path.strip():
+        checked.append(("system", Path(settings.system_disk_path.strip())))
     result = []
-    for name, path in (("data", settings.sqlite_path.parent), ("system", Path("/"))):
+    for name, path in checked:
         usage = shutil.disk_usage(path if path.exists() else Path("/"))
         result.append(Disk(name, round(usage.used * 100 / usage.total) if usage.total else 0))
     return result

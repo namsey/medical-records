@@ -64,7 +64,7 @@ notice and the breach runbook reviewed (see [Privacy](#privacy-and-your-data)).
 backend/            FastAPI app (app/), Alembic migrations (alembic/), tests (tests/)
 frontend/           React app (src/), built into frontend/dist; end-to-end tests (e2e/)
 scripts/            Backup, restore and home-copy scripts, and their tests
-deploy/             systemd units and journald settings for the server
+deploy/             systemd units and journald settings for the server; compose/: the Docker stack
 docs/               BREACH_RUNBOOK.md
 data/               Created on first run: medical_records.db, files/<account id>/, backups/  (never commit this)
 .env                Your configuration (never commit this)  ->  copy from .env.example
@@ -140,6 +140,37 @@ All settings are environment variables (or lines in `.env`); see `.env.example`.
 | `DISK_ALERT_PERCENT`, `BACKUP_MAX_AGE_HOURS` | `80`, `26` | Thresholds of the disk and backup health checks |
 | `SESSION_MAX_AGE_DAYS` | `14` | How long a sign-in lasts |
 | `SESSION_IDLE_HOURS` | `24` | A sign-in unused this long ends sooner (1–720) |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Proxies whose `X-Forwarded-For` gives the client IP (rate limits); comma-separated |
+| `SYSTEM_DISK_PATH` | `/` | The "system" disk checked by `/api/health/disk`; empty checks only the data disk (containers) |
+| `SHUTDOWN_GRACE_SECONDS` | `30` | On stop (SIGTERM), requests still running, such as uploads, get this long to finish |
+| `APP_COMMIT`, `APP_VERSION` | `dev` | Shown by `GET /api/version`; set by the Docker build |
+
+### Run with Docker
+
+The same app as one image (`Dockerfile`) behind Caddy, as the servers run it (`deploy/compose/compose.yaml`).
+On a laptop, `deploy/compose/compose.dev.yaml` builds the image from this checkout and serves plain HTTP on
+<http://localhost:8000>. Use synthetic data only.
+
+1. Make a **separate** Google OAuth client for Docker development (step "Google sign-in" above) with the
+   redirect URI `http://localhost:8000/api/auth/callback`, and put it in `.env` with the other required settings.
+   The data paths in `.env` are ignored: in the container the data lives in `/data`.
+2. Create the data folder, owned by the container's user (UID/GID 10001):
+
+   ```bash
+   mkdir -p data-dev
+   sudo chown 10001:10001 data-dev          # Linux; Docker Desktop (macOS/Windows) needs only mkdir
+   ```
+
+3. Start it:
+
+   ```bash
+   GIT_SHA=$(git rev-parse HEAD) docker compose -f deploy/compose/compose.dev.yaml up --build
+   curl -s http://localhost:8000/api/version     # {"commit": "<sha>", "version": "dev"}
+   ```
+
+`data-dev/` holds the database, files and snapshots (never commit it). The container runs as UID 10001 with a
+read-only root filesystem; only `/data` and `/tmp` are writable. To build both architectures the servers use:
+`docker buildx build --platform linux/arm64,linux/amd64 .`
 
 ## Inviting people
 
@@ -286,4 +317,4 @@ All paths are under `/api`. They need a session cookie (and an accepted privacy 
 | Documents | `POST /records/{id}/documents`, `GET /documents/{id}`, `GET /documents/{id}/view`, `GET /documents/{id}/download`, `DELETE /documents/{id}` |
 | Storage and export | `GET /storage`, `GET /export/json`, `GET /backup` (ZIP of your own data), `GET /config` |
 | Admin (admin only; 404 for others) | `GET/POST /admin/invites`, `POST /admin/invites/{id}/revoke`, `GET /admin/users`, `PUT /admin/users/{id}/quota`, `POST /admin/users/{id}/disable` / `enable` / `delete`, `GET /admin/audit`, `GET /admin/system` |
-| Health (public) | `GET /health`, `GET /health/disk`, `GET /health/backup` |
+| Health (public) | `GET /health`, `GET /health/disk`, `GET /health/backup`, `GET /version` (commit and version only) |

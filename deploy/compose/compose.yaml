@@ -1,0 +1,80 @@
+# What both VMs run (ctr-2): the app image behind Caddy, which serves HTTPS for SITE_DOMAIN.
+#
+#   APP_IMAGE=ghcr.io/namsey/medical-records@sha256:<digest> DATA_DIR=/srv/medical-records/data \
+#   SITE_DOMAIN=records.example.com docker compose -f deploy/compose/compose.yaml up -d
+#
+# APP_IMAGE is always a full digest reference, never a tag. DATA_DIR must be owned by 10001:10001.
+# The app's settings and secrets come from /etc/medical-records/app.env (see .env.example).
+
+name: medical-records
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  app:
+    image: ${APP_IMAGE:?set APP_IMAGE to the image digest reference}
+    env_file: /etc/medical-records/app.env
+    environment:
+      # These win over app.env: the data lives on the volume, and only Caddy may set the client IP.
+      DATABASE_URL: sqlite:////data/medical_records.db
+      FILES_DIR: /data/files
+      UPLOAD_DIR: /data/uploads
+      FORWARDED_ALLOW_IPS: 172.30.0.10
+      # Inside the container "/" is the image, not the VM disk; only the data disk is checked.
+      SYSTEM_DISK_PATH: ""
+    volumes:
+      - ${DATA_DIR:?set DATA_DIR to the data folder on the VM}:/data
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: ${APP_MEMORY_LIMIT:-1g}
+    # Longer than SHUTDOWN_GRACE_SECONDS (30), so uploads still running can finish before the kill.
+    stop_grace_period: 40s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging: *logging
+    networks:
+      web:
+        ipv4_address: 172.30.0.20
+
+  caddy:
+    image: caddy:2.11.7@sha256:504a44d7d74bd2bc28a66afc4774912fc21223ca8a67734af1c54ab2f999b489
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN, e.g. records.example.com}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+    logging: *logging
+    networks:
+      web:
+        # The app trusts X-Forwarded-For only from this address (FORWARDED_ALLOW_IPS above).
+        ipv4_address: 172.30.0.10
+
+networks:
+  web:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  caddy_data:
+  caddy_config:
