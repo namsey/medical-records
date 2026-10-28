@@ -251,7 +251,7 @@ repositories in the `medical-records` compartment (only this one):
 
 | User | Group / policy | Used by | May |
 | --- | --- | --- | --- |
-| `ci-image-pusher` | `medical-records-image-pushers`, *manage repos* (in the `medical-records` compartment) | GitHub Actions (and you, until the pipeline exists: B9) | push images, move tags |
+| `ci-image-pusher` | `medical-records-image-pushers`, *manage repos* (in the `medical-records` compartment) | GitHub Actions (docs/CICD.md; and you, when publishing by hand: B9) | push images, move tags |
 | `vm-image-puller` | `medical-records-image-pullers`, *read repos* | both VMs | pull only |
 
 1. In `infra/`: `terraform plan` (it adds the repository, two groups, two users, two memberships and one policy,
@@ -420,8 +420,9 @@ sudo touch /etc/medical-records/deploy-paused        # pause it (maintenance, a 
 Until a tag exists the agent only logs "No 'prod' tag … yet". `restore.sh --apply` holds the agent's lock, so no
 deploy starts the app halfway through a restore.
 
-**Publishing an image by hand** (until the CI/CD pipeline does it). On your computer, from a commit that is on
-`main` on GitHub (the agent fetches that commit), with Docker Buildx:
+**Publishing an image by hand.** Normally the Deliver workflow does this (docs/CICD.md); by hand is for the first
+image or when GitHub Actions is down. On your computer, from a commit that is on `main` on GitHub (the agent
+fetches that commit), with Docker Buildx:
 
 ```bash
 REPO=bom.ocir.io/<namespace>/medical-records/app
@@ -569,16 +570,21 @@ Then invite people from **Profile → Admin** (see the README, "Inviting people"
 
 ### C1. Updating the app
 
-A new version reaches a VM only by moving its tag in OCIR; the agent (B9) does the rest. Until the CI/CD pipeline
-does this, publish by hand as in B9:
+A new version reaches a VM only by moving its tag in OCIR; the agent (B9) does the rest. The Deliver workflow
+moves the tags (docs/CICD.md):
 
-1. Push the image (`sha-<commit>`) and move **`staging`** to it. Within about 2 minutes staging runs it; check
-   `https://staging-records.yourname.in/api/version` (its `commit`) and try the app there with synthetic data.
-2. Move **`prod`** to the same image. The prod agent backs up, then deploys; check
-   `https://records.yourname.in/api/version` and `journalctl -u medical-records-deploy -n 30` on prod.
+1. **Merge to main.** CI passes, Deliver builds `sha-<commit>` and moves **`staging`** to it, then waits for
+   `https://staging-records.yourname.in/api/version` to report the commit and smoke-tests it. Try the app there with
+   synthetic data.
+2. **Push a tag `vX.Y.Z`** on that commit and approve the *production* deployment in GitHub. Deliver moves
+   **`prod`**; the prod agent backs up, then deploys; Deliver waits for `https://records.yourname.in/api/version`
+   and smoke-tests it. If anything fails it moves the tag back.
+
+Without GitHub Actions, publish and move the tags by hand as in B9.
 
 If the new image is not healthy within 3 minutes, the agent goes back to the previous one by itself and skips that
-image. To roll back a release that is healthy but wrong, move the tag back to the previous image:
+image. To roll back a release that is healthy but wrong: Actions → Deliver → *Run workflow* with the previous
+version (docs/CICD.md), or by hand, move the tag back to the previous image:
 
 ```bash
 docker buildx imagetools create -t $REPO:prod $REPO:sha-<previous commit>   # or the previous digest
