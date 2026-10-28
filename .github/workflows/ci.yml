@@ -117,6 +117,10 @@ jobs:
         run: scripts/test-backup.sh
         env:
           PYTHON: python
+      - name: Delivery script tests (smoke test, tag moves, prune report; local stand-ins)
+        run: scripts/test-delivery.sh
+        env:
+          PYTHON: python
 
   terraform:
     name: Terraform
@@ -136,6 +140,76 @@ jobs:
         run: terraform init -backend=false -input=false
       - name: Validate
         run: terraform validate
+
+  dockerfile-lint:
+    name: Dockerfile lint (hadolint)
+    runs-on: ubuntu-latest
+    env:
+      HADOLINT_VERSION: "2.15.1"
+      HADOLINT_SHA256: "c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: hadolint
+        run: |
+          curl -sSfL -o hadolint "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
+          echo "${HADOLINT_SHA256}  hadolint" | sha256sum -c -
+          chmod +x hadolint
+          ./hadolint Dockerfile
+
+  # Builds the image for both architectures (as deliver.yml does, sharing its cache) without pushing it, then
+  # scans the amd64 image. Fails on CRITICAL or HIGH vulnerabilities that have a fix.
+  image:
+    name: Image (multi-arch build + Trivy scan)
+    runs-on: ubuntu-latest
+    env:
+      TRIVY_VERSION: "0.75.0"
+      TRIVY_SHA256: "c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build linux/arm64 + linux/amd64 (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/arm64,linux/amd64
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            APP_VERSION=ci-${{ github.sha }}
+          cache-from: type=gha,scope=image
+          cache-to: type=gha,scope=image,mode=max
+      - name: Load the amd64 image for the scan (from the cache)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: medical-records:ci
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            APP_VERSION=ci-${{ github.sha }}
+          cache-from: type=gha,scope=image
+      - name: Install Trivy
+        run: |
+          archive="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -sSfLO "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${archive}"
+          echo "${TRIVY_SHA256}  ${archive}" | sha256sum -c -
+          tar xzf "${archive}" trivy
+      - name: Scan (CRITICAL/HIGH with a fix)
+        run: |
+          ./trivy image --no-progress --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 \
+            --format table --output trivy-report.txt medical-records:ci || status=$?
+          cat trivy-report.txt
+          exit "${status:-0}"
+      - name: Upload the Trivy report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-report
+          path: trivy-report.txt
+          retention-days: 14
 
   supply-chain:
     name: Supply chain (dependency audit + secret scan)

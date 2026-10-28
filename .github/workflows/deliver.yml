@@ -1,0 +1,443 @@
+# Delivery (docs/CICD.md): builds the image once, pushes it to OCIR (source of truth) and Docker Hub (backup copy),
+# deploys staging from main and prod from a version tag after approval. It never connects to a VM: it only moves
+# the OCIR tag "staging" or "prod", and the agent on each VM deploys that digest (scripts/deploy-agent.sh).
+#
+#   main, after CI passed on a push:  build-push -> scan -> deploy-staging, mirror-dockerhub, prune (report only)
+#   tag vX.Y.Z (created by the owner): verify -> tag-release (+ Docker Hub) -> deploy-production -> github-release
+#   manual run (Actions -> Deliver):  rollback of staging or production to a vX.Y.Z or sha-<commit> image
+#
+# Reads repository variables OCIR_REGISTRY, OCIR_REPOSITORY, DOCKERHUB_REPOSITORY; repository secrets OCIR_USERNAME,
+# OCIR_AUTH_TOKEN, DOCKERHUB_USERNAME, DOCKERHUB_TOKEN; environment variable APP_URL in "staging" and "production".
+# None of it reaches pull requests: this workflow never runs for one.
+name: Deliver
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image to roll back to: vX.Y.Z or sha-<full commit sha>"
+        required: true
+        type: string
+      environment:
+        description: "Environment"
+        required: true
+        type: choice
+        options: [staging, production]
+
+permissions: {}
+
+env:
+  OCIR_REGISTRY: ${{ vars.OCIR_REGISTRY }}
+  OCIR_REPOSITORY: ${{ vars.OCIR_REPOSITORY }}
+  DOCKERHUB_IMAGE: docker.io/${{ vars.DOCKERHUB_REPOSITORY }}
+  TRIVY_VERSION: "0.75.0"
+  TRIVY_SHA256: "c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f"
+
+jobs:
+  # ---------------------------------------------------------------- main: build, scan, staging ----------------
+  build-push:
+    name: Build and push to OCIR
+    # Only a successful CI run of a push to main in this repository. The branch filter alone would also match a
+    # pull request from a fork whose branch is named main, and this workflow holds the secrets.
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      sha: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ vars.OCIR_REGISTRY }}
+          username: ${{ secrets.OCIR_USERNAME }}
+          password: ${{ secrets.OCIR_AUTH_TOKEN }}
+      - name: Short sha
+        id: short
+        run: echo "sha=${SHA:0:7}" >>"$GITHUB_OUTPUT"
+      - name: Build linux/arm64 + linux/amd64 and push sha-<commit>
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/arm64,linux/amd64
+          push: true
+          tags: ${{ vars.OCIR_REPOSITORY }}:sha-${{ github.event.workflow_run.head_sha }}
+          build-args: |
+            GIT_SHA=${{ github.event.workflow_run.head_sha }}
+            APP_VERSION=main-${{ steps.short.outputs.sha }}
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha,scope=image
+          cache-to: type=gha,scope=image,mode=max
+      - name: Summary
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "Pushed \`$OCIR_REPOSITORY:sha-$SHA\` = \`$DIGEST\`" >>"$GITHUB_STEP_SUMMARY"
+
+  scan:
+    name: Scan the pushed image (Trivy)
+    needs: build-push
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Install Trivy
+        run: |
+          archive="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -sSfLO "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${archive}"
+          echo "${TRIVY_SHA256}  ${archive}" | sha256sum -c -
+          tar xzf "${archive}" trivy
+      - name: Scan both architectures (CRITICAL/HIGH with a fix)
+        env:
+          TRIVY_USERNAME: ${{ secrets.OCIR_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.OCIR_AUTH_TOKEN }}
+          IMAGE: ${{ vars.OCIR_REPOSITORY }}@${{ needs.build-push.outputs.digest }}
+        run: |
+          for platform in linux/amd64 linux/arm64; do
+            echo "::group::$platform"
+            ./trivy image --no-progress --platform "$platform" --severity CRITICAL,HIGH --ignore-unfixed \
+              --exit-code 1 "$IMAGE"
+            echo "::endgroup::"
+          done
+
+  # A failure here shows as a failed job, but deploy-staging does not wait for it.
+  mirror-dockerhub:
+    name: Copy to Docker Hub
+    needs: [build-push, scan]
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      DIGEST: ${{ needs.build-push.outputs.digest }}
+      SHA: ${{ needs.build-push.outputs.sha }}
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ vars.OCIR_REGISTRY }}
+          username: ${{ secrets.OCIR_USERNAME }}
+          password: ${{ secrets.OCIR_AUTH_TOKEN }}
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Copy by digest (no rebuild) and check the digest
+        run: |
+          docker buildx imagetools create -t "$DOCKERHUB_IMAGE:sha-$SHA" "$OCIR_REPOSITORY@$DIGEST"
+          copied=$(docker buildx imagetools inspect "$DOCKERHUB_IMAGE:sha-$SHA" --format '{{.Manifest.Digest}}')
+          if [[ "$copied" != "$DIGEST" ]]; then
+            echo "::error::Docker Hub has $copied, OCIR has $DIGEST"
+            exit 1
+          fi
+          echo "Copied to \`$DOCKERHUB_IMAGE:sha-$SHA\` (same digest)" >>"$GITHUB_STEP_SUMMARY"
+
+  deploy-staging:
+    name: Deploy to staging
+    needs: [build-push, scan]
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ vars.APP_URL }}
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      DIGEST: ${{ needs.build-push.outputs.digest }}
+      SHA: ${{ needs.build-push.outputs.sha }}
+      APP_URL: ${{ vars.APP_URL }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build-push.outputs.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ vars.OCIR_REGISTRY }}
+          username: ${{ secrets.OCIR_USERNAME }}
+          password: ${{ secrets.OCIR_AUTH_TOKEN }}
+      # The deployment GitHub makes for `environment:` records main's newest commit, which can be a later one than
+      # this run's. A release (verify) looks for a staging deployment of exactly its commit, so record one here.
+      - name: Record a staging deployment of this commit
+        id: deployment
+        run: |
+          id=$(jq -n --arg sha "$SHA" '{ref: $sha, environment: "staging", auto_merge: false, required_contexts: [],
+                description: "Image sha-\($sha)"}' |
+               gh api "repos/$GITHUB_REPOSITORY/deployments" --input - --jq .id)
+          gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" -f state=in_progress >/dev/null
+          echo "id=$id" >>"$GITHUB_OUTPUT"
+      - name: Move the staging tag, wait for the VM, smoke test
+        env:
+          REPOSITORY: ${{ vars.OCIR_REPOSITORY }}
+          TAG: staging
+          COMMIT: ${{ needs.build-push.outputs.sha }}
+          TIMEOUT: "600"
+        run: scripts/move-env-tag.sh
+      - name: Deployment status
+        if: always() && steps.deployment.outputs.id
+        env:
+          ID: ${{ steps.deployment.outputs.id }}
+          STATE: ${{ job.status == 'success' && 'success' || 'failure' }}
+        run: gh api "repos/$GITHUB_REPOSITORY/deployments/$ID/statuses" -f state="$STATE" -f environment_url="$APP_URL" >/dev/null
+
+  prune:
+    name: Old OCIR images (report only)
+    needs: [build-push, deploy-staging]
+    if: always() && needs.build-push.result == 'success'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the report orders sha-* images by the history of main
+          persist-credentials: false
+      - name: Report
+        env:
+          REPOSITORY: ${{ vars.OCIR_REPOSITORY }}
+          REGISTRY_USERNAME: ${{ secrets.OCIR_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.OCIR_AUTH_TOKEN }}
+          KEEP: "10"
+        run: scripts/prune-report.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------- tag vX.Y.Z: production ---------------------
+  verify:
+    name: Verify the release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: read
+    env:
+      TAG: ${{ github.ref_name }}
+      SHA: ${{ github.sha }}
+      GH_TOKEN: ${{ github.token }}
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: The tag is vX.Y.Z on a commit of main
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$TAG is not vX.Y.Z"; exit 1
+          fi
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::$TAG points at $SHA, which is not on main"; exit 1
+          fi
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ vars.OCIR_REGISTRY }}
+          username: ${{ secrets.OCIR_USERNAME }}
+          password: ${{ secrets.OCIR_AUTH_TOKEN }}
+      - name: The image sha-<commit> exists in OCIR
+        id: image
+        run: |
+          if ! digest=$(docker buildx imagetools inspect "$OCIR_REPOSITORY:sha-$SHA" --format '{{.Manifest.Digest}}'); then
+            echo "::error::No image sha-$SHA in OCIR: main's pipeline has not built this commit"; exit 1
+          fi
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+      - name: This commit was deployed to staging successfully
+        run: |
+          ok=0
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=staging&sha=$SHA&per_page=100" --jq '.[].id'); do
+            state=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses?per_page=1" --jq '.[0].state // ""')
+            if [[ "$state" == success ]]; then ok=1; fi
+          done
+          if ((!ok)); then
+            echo "::error::No successful staging deployment of $SHA: release only what staging has run"; exit 1
+          fi
+
+  tag-release:
+    name: Tag the image vX.Y.Z in OCIR
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      TAG: ${{ github.ref_name }}
+      DIGEST: ${{ needs.verify.outputs.digest }}
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ vars.OCIR_REGISTRY }}
+          username: ${{ secrets.OCIR_USERNAME }}
+          password: ${{ secrets.OCIR_AUTH_TOKEN }}
+      # The repository lets tags move (staging and prod must), so a version tag is protected here.
+      - name: Add vX.Y.Z (never moves an existing one)
+        run: |
+          if existing=$(docker buildx imagetools inspect "$OCIR_REPOSITORY:$TAG" --format '{{.Manifest.Digest}}' 2>/dev/null); then
+            if [[ "$existing" != "$DIGEST" ]]; then
+              echo "::error::$TAG already exists in OCIR as $existing, not $DIGEST"; exit 1
+            fi
+            echo "$TAG already points at $DIGEST"
+          else
+            docker buildx imagetools create -t "$OCIR_REPOSITORY:$TAG" "$OCIR_REPOSITORY@$DIGEST"
+          fi
+
+  tag-release-dockerhub:
+    name: Tag the image vX.Y.Z on Docker Hub
+    needs: [verify, tag-release]
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      TAG: ${{ github.ref_name }}
+      DIGEST: ${{ needs.verify.outputs.digest }}
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ vars.OCIR_REGISTRY }}
+          username: ${{ secrets.OCIR_USERNAME }}
+          password: ${{ secrets.OCIR_AUTH_TOKEN }}
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Copy vX.Y.Z by digest
+        run: |
+          if existing=$(docker buildx imagetools inspect "$DOCKERHUB_IMAGE:$TAG" --format '{{.Manifest.Digest}}' 2>/dev/null); then
+            if [[ "$existing" != "$DIGEST" ]]; then
+              echo "::error::$TAG already exists on Docker Hub as $existing, not $DIGEST"; exit 1
+            fi
+          else
+            docker buildx imagetools create -t "$DOCKERHUB_IMAGE:$TAG" "$OCIR_REPOSITORY@$DIGEST"
+          fi
+          copied=$(docker buildx imagetools inspect "$DOCKERHUB_IMAGE:$TAG" --format '{{.Manifest.Digest}}')
+          [[ "$copied" == "$DIGEST" ]] || { echo "::error::Docker Hub has $copied, OCIR has $DIGEST"; exit 1; }
+
+  deploy-production:
+    name: Deploy to production
+    needs: [verify, tag-release]
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.APP_URL }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ vars.OCIR_REGISTRY }}
+          username: ${{ secrets.OCIR_USERNAME }}
+          password: ${{ secrets.OCIR_AUTH_TOKEN }}
+      # Up to 20 minutes: the prod agent takes a backup before it switches.
+      - name: Move the prod tag, wait for the VM, smoke test
+        env:
+          REPOSITORY: ${{ vars.OCIR_REPOSITORY }}
+          TAG: prod
+          DIGEST: ${{ needs.verify.outputs.digest }}
+          COMMIT: ${{ github.sha }}
+          APP_URL: ${{ vars.APP_URL }}
+          TIMEOUT: "1200"
+        run: scripts/move-env-tag.sh
+
+  github-release:
+    name: GitHub release
+    needs: deploy-production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Create the release with generated notes
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes
+
+  # ---------------------------------------------------------------- manual: rollback ---------------------------
+  rollback:
+    name: Roll back ${{ inputs.environment }}
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.APP_URL }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ inputs.version }}
+      ENVIRONMENT: ${{ inputs.environment }}
+    steps:
+      - name: Check the input
+        run: |
+          if [[ ! "$VERSION" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+|sha-[0-9a-f]{40})$ ]]; then
+            echo "::error::version must be vX.Y.Z or sha-<full commit sha>"; exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ vars.OCIR_REGISTRY }}
+          username: ${{ secrets.OCIR_USERNAME }}
+          password: ${{ secrets.OCIR_AUTH_TOKEN }}
+      - name: Resolve the image
+        id: image
+        run: |
+          if ! digest=$(docker buildx imagetools inspect "$OCIR_REPOSITORY:$VERSION" --format '{{.Manifest.Digest}}'); then
+            echo "::error::No image $VERSION in OCIR"; exit 1
+          fi
+          commit=$(docker buildx imagetools inspect "$OCIR_REPOSITORY@$digest" --format '{{json .Image}}' |
+            jq -r '[.[]][0].config.Labels["org.opencontainers.image.revision"] // empty')
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::$VERSION has no commit label"; exit 1; }
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+          echo "commit=$commit" >>"$GITHUB_OUTPUT"
+      - name: Database migrations
+        run: |
+          cat <<EOF
+          ::warning::Rolling $ENVIRONMENT back to $VERSION.
+          ============================================================================================
+           The database is NOT rolled back. Migrations are backward-compatible with the previous
+           release (CLAUDE.md), so going back ONE release is safe. Going back across a destructive
+           migration needs the restore runbook (DEPLOY.md C3/C4), not this workflow.
+          ============================================================================================
+          EOF
+      - name: Move the tag, wait for the VM, smoke test
+        env:
+          REPOSITORY: ${{ vars.OCIR_REPOSITORY }}
+          TAG: ${{ inputs.environment == 'production' && 'prod' || 'staging' }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+          COMMIT: ${{ steps.image.outputs.commit }}
+          APP_URL: ${{ vars.APP_URL }}
+          TIMEOUT: ${{ inputs.environment == 'production' && '1200' || '600' }}
+        run: scripts/move-env-tag.sh
