@@ -43,7 +43,9 @@ RUN groupadd --system --gid 10001 app \
 # app.config: BACKEND_ROOT = /app/backend, so FRONTEND_DIST = /app/frontend/dist.
 WORKDIR /app/backend
 COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# pip is not needed at runtime, and its vendored copies of urllib3, msgpack and setuptools carry CVEs (Trivy).
+RUN pip install --no-cache-dir -r requirements.txt \
+ && pip uninstall --yes pip
 COPY backend/alembic.ini ./
 COPY backend/alembic/ ./alembic/
 COPY backend/app/ ./app/
