@@ -246,12 +246,12 @@ Google only confirms who is signing in; it never sees records.
 ### A12. Container registry (OCIR) and its users
 
 The VMs never build the app: they run the app image from a private repository in **OCI Container Registry**
-(Mumbai), `medical-records/app`. Terraform (`infra/ocir.tf`) creates it with two users that can only touch that
-repository:
+(Mumbai), `medical-records/app`. Terraform (`infra/ocir.tf`) creates it with two users that can only touch the
+repositories in the `medical-records` compartment (only this one):
 
 | User | Group / policy | Used by | May |
 | --- | --- | --- | --- |
-| `ci-image-pusher` | `medical-records-image-pushers`, *manage repos* (read and update only) | GitHub Actions (and you, until the pipeline exists: B9) | push images, move tags |
+| `ci-image-pusher` | `medical-records-image-pushers`, *manage repos* (in the `medical-records` compartment) | GitHub Actions (and you, until the pipeline exists: B9) | push images, move tags |
 | `vm-image-puller` | `medical-records-image-pullers`, *read repos* | both VMs | pull only |
 
 1. In `infra/`: `terraform plan` (it adds the repository, two groups, two users, two memberships and one policy,
