@@ -1,5 +1,7 @@
 #cloud-config
-# First boot of the VM: DEPLOY.md B1 (updates and tools) and B2 (ports 80/443 in the VM firewall).
+# First boot of the VM: DEPLOY.md B1 (updates and tools), B2 (ports 80/443 in the VM firewall) and B3 (Docker).
+# Existing VMs never see edits to this file (main.tf ignores user_data changes, so a running VM is not rebuilt):
+# scripts/host-setup.sh is what prepares running VMs, and it repeats these steps when they are missing.
 package_update: true
 package_upgrade: true
 package_reboot_if_required: true
@@ -22,3 +24,11 @@ write_files:
 runcmd:
   - [sh, -c, "iptables -C INPUT -p tcp -m multiport --dports 80,443 -m conntrack --ctstate NEW -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp -m multiport --dports 80,443 -m conntrack --ctstate NEW -j ACCEPT"]
   - [netfilter-persistent, save]
+  # B3: Docker Engine, Compose and Buildx from Docker's own apt repository (same as scripts/host-setup.sh).
+  - [install, -m, "0755", -d, /etc/apt/keyrings]
+  - [curl, -fsSL, https://download.docker.com/linux/ubuntu/gpg, -o, /etc/apt/keyrings/docker.asc]
+  - [chmod, a+r, /etc/apt/keyrings/docker.asc]
+  - [sh, -c, 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list']
+  - [apt-get, update, -q]
+  - [apt-get, install, -y, -q, docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin, docker-buildx-plugin]
+  - [systemctl, enable, --now, docker]

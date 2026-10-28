@@ -1,23 +1,17 @@
 # What both VMs run (ctr-2): the app image behind Caddy, which serves HTTPS for SITE_DOMAIN.
 #
-#   APP_IMAGE=ghcr.io/namsey/medical-records@sha256:<digest> DATA_DIR=/srv/medical-records/data \
-#   SITE_DOMAIN=records.example.com docker compose -f deploy/compose/compose.yaml up -d
-#
-# APP_IMAGE is always a full digest reference, never a tag. DATA_DIR must be owned by 10001:10001.
-# The app's settings and secrets come from /etc/medical-records/app.env (see .env.example).
+# On the VMs this folder is installed to /opt/medical-records/compose by scripts/host-setup.sh, next to a .env with
+# APP_IMAGE, DATA_DIR, SITE_DOMAIN and APP_MEMORY_LIMIT, and run through medical-records-compose (DEPLOY.md B6).
+# The deploy agent sets APP_IMAGE (always <registry>/<namespace>/medical-records/app@sha256:<digest>, never a
+# tag). DATA_DIR must be owned by 10001:10001. The app's settings and secrets come from /etc/medical-records/app.env.
+# APP_ENV_FILE, CLAMAV_RUN_DIR and BACKUP_STATUS_HOST_DIR exist for local tests only; the VMs use the defaults.
 
 name: medical-records
-
-x-logging: &logging
-  driver: json-file
-  options:
-    max-size: "10m"
-    max-file: "5"
 
 services:
   app:
     image: ${APP_IMAGE:?set APP_IMAGE to the image digest reference}
-    env_file: /etc/medical-records/app.env
+    env_file: ${APP_ENV_FILE:-/etc/medical-records/app.env}
     environment:
       # These win over app.env: the data lives on the volume, and only Caddy may set the client IP.
       DATABASE_URL: sqlite:////data/medical_records.db
@@ -28,6 +22,11 @@ services:
       SYSTEM_DISK_PATH: ""
     volumes:
       - ${DATA_DIR:?set DATA_DIR to the data folder on the VM}:/data
+      # The host's clamd socket (prod: CLAMAV_SOCKET=/run/clamav/clamd.ctl, DEPLOY.md C6). systemd creates it with
+      # mode 666 and only replaces the socket file on a restart, so mounting the folder keeps it reachable.
+      - ${CLAMAV_RUN_DIR:-/run/clamav}:/run/clamav:ro
+      # last-success / last-failure written by the backup timer (prod: BACKUP_STATUS_DIR, same path inside).
+      - ${BACKUP_STATUS_HOST_DIR:-/var/lib/medical-records-backup}:/var/lib/medical-records-backup:ro
     user: "10001:10001"
     read_only: true
     tmpfs:
@@ -42,7 +41,12 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
-    logging: *logging
+    # To the journal (capped by deploy/journald/medical-records.conf), so logs survive recreating the container:
+    # journalctl -t medical-records-app, or medical-records-compose logs app.
+    logging:
+      driver: journald
+      options:
+        tag: medical-records-app
     networks:
       web:
         ipv4_address: 172.30.0.20
@@ -54,7 +58,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -62,7 +65,10 @@ services:
     depends_on:
       - app
     restart: unless-stopped
-    logging: *logging
+    logging:
+      driver: journald
+      options:
+        tag: medical-records-caddy
     networks:
       web:
         # The app trusts X-Forwarded-For only from this address (FORWARDED_ALLOW_IPS above).

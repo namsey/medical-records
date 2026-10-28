@@ -30,6 +30,16 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# The deploy agent (medical-records-deploy) takes the same lock, so it never starts the app during a restore.
+# Taken before restoring, so giving up leaves no unencrypted copy behind.
+if [[ "$apply" == "1" ]]; then
+  exec 8>"$DEPLOY_LOCK"
+  if ! flock -w "$DEPLOY_LOCK_WAIT" 8; then
+    echo "A deploy is still running (lock $DEPLOY_LOCK); nothing changed. Try again in a few minutes." >&2
+    exit 1
+  fi
+fi
+
 mkdir -p "$STATE_DIR"
 if [[ -z "$target" ]]; then
   target="$(mktemp -d "$STATE_DIR/restore-XXXXXX")"
@@ -73,8 +83,13 @@ fi
 mkdir -p "$DATA_DIR"
 mv "$target/database/medical_records.db" "$DB_FILE"
 mv "$target/files" "$FILES_DIR"
-# Keep the owner of the old data folder (or of its parent on a new server), so the app can read and write it.
-chown -R --reference="$(if [[ -e "$aside" ]]; then echo "$aside"; else dirname "$DATA_DIR"; fi)" "$DATA_DIR"
+# DATA_OWNER (the app container's uid:gid), or else the owner of the old data folder (or of its parent on a new
+# server), so the app can read and write it.
+if [[ -n "${DATA_OWNER:-}" ]]; then
+  chown -R "$DATA_OWNER" "$DATA_DIR"
+else
+  chown -R --reference="$(if [[ -e "$aside" ]]; then echo "$aside"; else dirname "$DATA_DIR"; fi)" "$DATA_DIR"
+fi
 chmod 700 "$DATA_DIR"
 rm -rf "$target"
 log "Starting the app"

@@ -1,0 +1,11 @@
+[Unit]
+Description=Medical records: check for a new image every 2 minutes
+
+[Timer]
+OnCalendar=*:0/2
+AccuracySec=15s
+# If the VM was off, check as soon as it is back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
