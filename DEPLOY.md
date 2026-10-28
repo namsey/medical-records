@@ -10,8 +10,8 @@ India: first the Oracle resources (Part A), then the server (Part B), then runni
 ## What you end up with
 
 ```text
- Phone / browser ──HTTPS──▶ Caddy (TLS, Let's Encrypt) ──▶ app (FastAPI, systemd, 127.0.0.1:8000)
-                                     one Ampere A1 VM, Ubuntu 24.04, Oracle Mumbai
+ Phone / browser ──HTTPS──▶ Caddy (TLS, Let's Encrypt) ──▶ app (FastAPI)   Docker Compose stack, deployed by an
+                                     one Ampere A1 VM, Ubuntu 24.04, Oracle Mumbai    agent from OCI Container Registry
                                               │
                          block volume /srv/medical-records (SQLite database + files)
                                               │  nightly, encrypted (restic)
@@ -80,6 +80,7 @@ staging sign-in can never be redirected to prod.
 You still do A1, A3, A5, A10 and A11 by hand. Copy `infra/terraform.tfvars.example` to `infra/terraform.tfvars`,
 fill it in, then run `terraform init` and `terraform plan` / `terraform apply` in `infra/`. `terraform output`
 shows each VM's public IP and SSH command. The console steps below are what Terraform does, for reference.
+Terraform also creates the container registry and its two users (A12); their auth tokens are made by hand.
 
 ### A1. Create the Oracle Cloud account (home region: Mumbai)
 
@@ -242,154 +243,198 @@ Google only confirms who is signing in; it never sees records.
 4. For staging, create a **second OAuth client** the same way, with the staging name in its redirect URI
    (`https://staging-records.yourname.in/api/auth/callback`). Never add the staging URI to the prod client.
 
+### A12. Container registry (OCIR) and its users
+
+The VMs never build the app: they run the app image from a private repository in **OCI Container Registry**
+(Mumbai), `medical-records/app`. Terraform (`infra/ocir.tf`) creates it with two users that can only touch that
+repository:
+
+| User | Group / policy | Used by | May |
+| --- | --- | --- | --- |
+| `ci-image-pusher` | `medical-records-image-pushers`, *use repos* | GitHub Actions (and you, until the pipeline exists: B9) | push images, move tags |
+| `vm-image-puller` | `medical-records-image-pullers`, *read repos* | both VMs | pull only |
+
+1. In `infra/`: `terraform plan` (it adds the repository, two groups, two users, two memberships and one policy,
+   and changes nothing else), then `terraform apply`. Note the outputs:
+
+   ```bash
+   terraform output ocir_registry      # bom.ocir.io
+   terraform output ocir_repository    # bom.ocir.io/<namespace>/medical-records/app
+   terraform output ocir_usernames     # the docker login names of the two users
+   ```
+
+2. **Auth tokens** (the registry passwords; Terraform does not make them, so they never land in its state). For
+   each of the two users: Identity & Security → **Domains** → *Default domain* → **User management** → **Users** →
+   the user → **Auth tokens** (in newer consoles under the *Tokens and keys* tab) → *Generate token*, description
+   `medical-records registry`. The token is shown **only once**: put it in your password manager. A user can have
+   at most two tokens; to replace one, generate the new one, update where it is used, then delete the old one.
+3. **Login username**: `<namespace>/<username>` for users in the Default identity domain, for example
+   `<namespace>/vm-image-puller`; for a user in another identity domain, `<namespace>/<domain name>/<username>`.
+   The registry host is `bom.ocir.io` and the password is the auth token. Try it from your computer:
+   `docker login bom.ocir.io -u <namespace>/ci-image-pusher`.
+
 ---
 
 ## Part B: Server setup (over SSH)
 
-Connect with `ssh -i ~/.ssh/oracle-medical-records ubuntu@<public IP>` and run the blocks in order.
-Replace `records.yourname.in` and the other placeholders with your own values.
+One script prepares each VM, and a small agent on it then deploys whatever image the OCIR tag for that environment
+points at: `staging` on the staging VM, `prod` on prod.
+
+```text
+ you / pipeline ──push image, move tag "staging" or "prod"──▶ OCIR medical-records/app
+                                                                     │  checked every 2 minutes
+ VM: medical-records-deploy (systemd timer) ◀──────────────────────┘
+       pull by digest ─▶ compose files of that commit ─▶ docker compose up ─▶ healthy? keep : go back
+```
+
+Copy the script to each VM and run it from a real terminal (`ssh -t`), so it can ask for the secrets:
+
+```bash
+scp -i ~/.ssh/oracle-medical-records scripts/host-setup.sh ubuntu@<prod IP>:
+ssh -t -i ~/.ssh/oracle-medical-records ubuntu@<prod IP> sudo ./host-setup.sh --env prod \
+  --domain records.yourname.in --registry bom.ocir.io \
+  --repository bom.ocir.io/<namespace>/medical-records/app --format-data-volume
+
+scp -i ~/.ssh/oracle-medical-records scripts/host-setup.sh ubuntu@<staging IP>:
+ssh -t -i ~/.ssh/oracle-medical-records ubuntu@<staging IP> sudo ./host-setup.sh --env staging \
+  --domain staging-records.yourname.in --registry bom.ocir.io \
+  --repository bom.ocir.io/<namespace>/medical-records/app
+```
+
+`--format-data-volume` only on prod's very first run (B4). It asks for:
+
+- the Google OAuth client ID and secret (**staging: its own client from A11**, never prod's), the admin email and
+  the grievance officer;
+- the `vm-image-puller` auth token (A12);
+- prod only: the `backup-writer` key (A9), and it shows the new restic password once (B11).
+
+It is safe to run again (after a reboot, to change a setting, or to update the agent); it keeps what exists and
+lists anything still to do at the end. B1–B9 below are what it does.
 
 ### B1. Updates and tools
 
-```bash
-sudo apt-get update && sudo apt-get -y full-upgrade
-sudo apt-get install -y git python3-venv python3-pip sqlite3 restic unattended-upgrades
-sudo dpkg-reconfigure -plow unattended-upgrades     # answer Yes: security updates install themselves
-sudo reboot                                         # then connect again
-```
+`git`, `python3`, `sqlite3`, `restic` (prod) and automatic security updates (`unattended-upgrades`). The app itself
+runs in its image (Python 3.13); the VM's own `python3` is only used by the backup scripts.
 
-Ubuntu 24.04 comes with Python 3.12, which the app supports (it needs 3.11 or newer; CI tests on 3.13).
-
-### B2. Open ports 80 and 443 inside the VM
+### B2. Ports 80 and 443 inside the VM
 
 Oracle's Ubuntu images have their own firewall (iptables) that only lets SSH in, on top of the security list from
-A4. Allow web traffic and save the rules so they survive a reboot:
+A4. The script allows web traffic and saves the rules:
 
 ```bash
-sudo iptables -I INPUT -p tcp -m multiport --dports 80,443 -m conntrack --ctstate NEW -j ACCEPT
-sudo netfilter-persistent save
 sudo iptables -L INPUT -n --line-numbers | head      # the ACCEPT for 80,443 comes before any REJECT
 ```
 
-### B3. Install Node.js 22 (to build the web app)
+### B3. Docker Engine, Compose and Buildx
 
-```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x -o /tmp/nodesource.sh   # read it if you like, then:
-sudo bash /tmp/nodesource.sh
-sudo apt-get install -y nodejs
-node --version                                       # v22.x
-```
+From Docker's own apt repository (Ubuntu's `docker.io` package has no Compose v2). VMs created from the current
+`infra/cloud-init.yaml` already have them; on older VMs the script installs them.
 
-### B4. Format and mount the data volume (first time only)
+### B4. The data volume (prod) or folder (staging)
 
-```bash
-lsblk                                                # the 100 GB disk, also at /dev/oracleoci/oraclevdb
-sudo mkfs.ext4 -L medical-data /dev/oracleoci/oraclevdb   # ONLY the first time: this erases the volume
-sudo mkdir -p /srv/medical-records
-echo '/dev/oracleoci/oraclevdb /srv/medical-records ext4 defaults,_netdev,nofail 0 2' | sudo tee -a /etc/fstab
-sudo systemctl daemon-reload
-sudo mount -a
-df -h /srv/medical-records                           # about 98 GB, mounted
-```
+Prod: the 100 GB volume (A8) is formatted only with `--format-data-volume` and only if it has no filesystem yet,
+then mounted at `/srv/medical-records` (in `/etc/fstab` with `nofail`). If you ever attach this volume to a new VM,
+leave the option out: it is just mounted. Staging has no data volume: `/srv/medical-records` is on its boot volume.
 
-If you ever attach this volume to a new VM, **skip `mkfs`**: just add the fstab line and mount it.
+### B5. Data folder
 
-### B5. App user and data folder
+`/srv/medical-records/data`, mode 700, owned by **10001:10001**, the user and group the app container runs as (there
+is no such user on the VM, and none is needed). The database, files and the app's pre-migration copies live there.
 
-```bash
-sudo useradd --system --home /srv/medical-records --shell /usr/sbin/nologin medical-records
-sudo install -d -m 700 -o medical-records -g medical-records /srv/medical-records/data
-```
+### B6. Code, compose files and the registry sign-in
 
-### B6. Get the code and build it
-
-```bash
-sudo git clone https://github.com/namsey/medical-records /opt/medical-records
-sudo chown -R ubuntu:ubuntu /opt/medical-records     # you build as "ubuntu"; the app only reads it
-cd /opt/medical-records
-git fetch --tags && git checkout vX.Y.Z              # a tagged release (see C1), not whatever is on main
-
-python3 -m venv backend/.venv
-backend/.venv/bin/pip install -r backend/requirements.txt
-
-cd frontend && npm ci && npm run build && cd ..      # writes frontend/dist, which the app serves
-```
+- `/opt/medical-records/repo`: a clone of this repository. The agent keeps it at the commit of the image that is
+  running, so the backup scripts and compose files always match the app.
+- `/opt/medical-records/compose`: `compose.yaml` and `Caddyfile` from that commit, and `.env` with `DATA_DIR`,
+  `SITE_DOMAIN`, `APP_MEMORY_LIMIT` (prod 2g, staging 1g) and `APP_IMAGE` (empty until the first deploy).
+- `docker login bom.ocir.io` as `<namespace>/vm-image-puller` (A12), stored in `/root/.docker/config.json`.
 
 ### B7. App settings
 
-```bash
-sudo install -d -m 700 /etc/medical-records
-python3 -c "import secrets; print(secrets.token_urlsafe(48))"     # use this as SESSION_SECRET
-sudo install -m 600 /dev/null /etc/medical-records/app.env
-sudo nano /etc/medical-records/app.env
-```
-
-Put this in `app.env` (one setting per line, no quotes needed):
+`/etc/medical-records/app.env` (mode 600, root), from the answers above:
 
 ```bash
 GOOGLE_CLIENT_ID=<from A11>
 GOOGLE_CLIENT_SECRET=<from A11>
 GOOGLE_REDIRECT_URI=https://records.yourname.in/api/auth/callback
 ADMIN_EMAIL=<your Google email: the admin account>
-SESSION_SECRET=<the random value from above>
-DATABASE_URL=sqlite:////srv/medical-records/data/medical_records.db
-FILES_DIR=/srv/medical-records/data/files
-UPLOAD_DIR=/srv/medical-records/data/uploads
-BACKUP_STATUS_DIR=/var/lib/medical-records-backup
+SESSION_SECRET=<generated on the VM: each VM has its own>
 GRIEVANCE_NAME=<your name>
 GRIEVANCE_EMAIL=<email for privacy questions>
-# Optional: DEFAULT_QUOTA_MB=100   MAX_UPLOAD_SIZE_MB=20   CLAMAV_SOCKET=/run/clamav/clamd.ctl (C6)
-#           SESSION_IDLE_HOURS=24   (sign out after a day unused; sign-ins end after 14 days in any case)
+BACKUP_STATUS_DIR=/var/lib/medical-records-backup     # prod
+CLAMAV_SOCKET=/run/clamav/clamd.ctl                   # prod (C6)
+# Optional: DEFAULT_QUOTA_MB=100   MAX_UPLOAD_SIZE_MB=20   SESSION_IDLE_HOURS=24
 ```
 
-The app refuses to start if a required setting is missing or if `GOOGLE_REDIRECT_URI` is not `https://`.
-
-### B8. Run the app as a service, with log rotation
+Where the data lives (`DATABASE_URL`, `FILES_DIR`, `UPLOAD_DIR`) is set by `compose.yaml`: inside the container it
+is `/data`. The app refuses to start if a required setting is missing or if `GOOGLE_REDIRECT_URI` is not
+`https://`. After changing `app.env`, recreate the app: the container reads it only when it is created:
 
 ```bash
-sudo cp /opt/medical-records/deploy/systemd/medical-records.service /etc/systemd/system/
-sudo install -D -m 644 /opt/medical-records/deploy/journald/medical-records.conf \
-     /etc/systemd/journald.conf.d/medical-records.conf
-sudo systemctl restart systemd-journald
-sudo systemctl daemon-reload
-sudo systemctl enable --now medical-records
-systemctl status medical-records --no-pager          # active (running)
-curl -s http://127.0.0.1:8000/api/health             # {"status":"ok"}
-journalctl -u medical-records -n 50                  # the app's recent log lines
+sudo medical-records-compose up -d --force-recreate --wait app
 ```
 
-The service runs one app process as the `medical-records` user, listening only on `127.0.0.1`. The first start
-creates the database and runs the migrations. The journal (the app's and the backup's logs) is capped at 500 MB and
-one month. The app never logs record contents, search terms or file names.
+### B8. The stack: app + Caddy, and `medical-records-compose`
 
-### B9. HTTPS with Caddy
+Every `docker compose` command for the stack goes through `medical-records-compose`, which runs in
+`/opt/medical-records/compose` (and refuses until an image is deployed):
 
 ```bash
-sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt-get update && sudo apt-get install -y caddy
+sudo medical-records-compose ps                     # app (healthy) and caddy, both Up
+sudo medical-records-compose logs --tail 50 app     # the app's recent log lines
+journalctl -t medical-records-app -n 50             # the same, from the journal (also after a redeploy)
 ```
 
-Replace `/etc/caddy/Caddyfile` (`sudo nano /etc/caddy/Caddyfile`) with:
+The app container runs as 10001 with a read-only system, can write only `/data` (and `/tmp`), and is not published
+on any port: only Caddy reaches it, over the stack's own network. Caddy is the second container, on ports 80 and
+443: it gets and renews the Let's Encrypt certificate by itself (it needs the DNS record from A10 and ports 80/443
+open in A4 and B2), keeps it in a Docker volume, and passes each visitor's real IP to the app (trusted only from
+Caddy's fixed address). HTTP/3 is off on purpose: UDP 443 is closed, and phones that tried it first failed to
+upload. Both containers restart by themselves after a crash or a reboot. Their logs go to the journal, capped at
+500 MB and one month (`deploy/journald/medical-records.conf`). The app never logs record contents, search terms or
+file names.
 
-```text
-records.yourname.in {
-    encode gzip
-    request_body {
-        max_size 25MB
-    }
-    reverse_proxy 127.0.0.1:8000
-}
-```
+### B9. The deploy agent
+
+`medical-records-deploy` runs every 2 minutes (`medical-records-deploy.timer`). Each run:
+
+1. reads which digest the environment's tag points at (`staging` or `prod`); if it is the one running, it stops;
+2. prod: takes a backup first (B11; not on the very first deploy). If the backup fails, nothing changes, and it
+   tries again for that image after 30 minutes;
+3. pulls the image by digest, checks out its commit (the image's `org.opencontainers.image.revision` label) in
+   `/opt/medical-records/repo` and installs that commit's `compose.yaml` and `Caddyfile`;
+4. sets `APP_IMAGE`, runs `docker compose up -d` and waits up to 3 minutes until the app container is healthy and
+   `https://<domain>/api/health` answers ok through Caddy;
+5. healthy: done. Not healthy: it goes back to the image and compose files that ran before, remembers the new digest
+   as bad (it is skipped until the tag points at another image), and the run fails (`systemctl status` and the
+   journal show it). A failed **first** deploy stops the app, as there is nothing to go back to.
 
 ```bash
-sudo systemctl reload caddy
-curl -sI https://records.yourname.in/api/health | head -1    # HTTP/2 200
+systemctl status medical-records-deploy.timer        # active (waiting), next run within 2 minutes
+journalctl -u medical-records-deploy -n 30           # what the last runs did
+cat /var/lib/medical-records/deploy.log              # one line per deploy or failure
+cat /var/lib/medical-records/deployed-digest         # what runs now
+sudo touch /etc/medical-records/deploy-paused        # pause it (maintenance, a breach); rm the file to resume
 ```
 
-Caddy gets and renews the Let's Encrypt certificate by itself (it needs the DNS record from A10 and ports 80/443
-open in A4 and B2). It passes each visitor's real IP to the app, which the sign-in and upload rate limits use.
+Until a tag exists the agent only logs "No 'prod' tag … yet". `restore.sh --apply` holds the agent's lock, so no
+deploy starts the app halfway through a restore.
+
+**Publishing an image by hand** (until the CI/CD pipeline does it). On your computer, from a commit that is on
+`main` on GitHub (the agent fetches that commit), with Docker Buildx:
+
+```bash
+REPO=bom.ocir.io/<namespace>/medical-records/app
+SHA=$(git rev-parse HEAD)
+docker login bom.ocir.io -u <namespace>/ci-image-pusher        # password: its auth token (A12)
+docker buildx build --platform linux/arm64,linux/amd64 \
+  --build-arg GIT_SHA=$SHA --build-arg APP_VERSION=main-${SHA:0:7} -t $REPO:sha-$SHA --push .
+docker buildx imagetools create -t $REPO:staging $REPO:sha-$SHA   # staging deploys it within ~2 minutes
+# after checking staging:
+docker buildx imagetools create -t $REPO:prod $REPO:sha-$SHA      # prod: backup, then deploy
+```
+
+The arm64 half is built under emulation unless your computer is arm64 (an Apple Silicon Mac builds it natively).
 
 ### B10. First sign-in
 
@@ -400,39 +445,35 @@ open in A4 and B2). It passes each visitor's real IP to the app, which the sign-
 
 ### B11. Backups (restic to the Mumbai bucket)
 
+Prod only: staging has no backups. `host-setup.sh --env prod` sets them up:
+
+- `/etc/medical-records/restic-password`: a new random password, **shown once** while the script runs. Copy it into
+  your password manager and onto paper before you type `saved`.
+- `/etc/medical-records/backup.env` (mode 600), from the `backup-writer` key (A9):
+
+  ```bash
+  DATA_DIR=/srv/medical-records/data
+  RESTIC_REPOSITORY=s3:https://<namespace>.compat.objectstorage.ap-mumbai-1.oraclecloud.com/medical-records-backup
+  AWS_DEFAULT_REGION=ap-mumbai-1
+  AWS_ACCESS_KEY_ID=<backup-writer access key from A9>
+  AWS_SECRET_ACCESS_KEY=<backup-writer secret key from A9>
+  RESTIC_PASSWORD_FILE=/etc/medical-records/restic-password
+  RESTIC_CACHE_DIR=/var/cache/medical-records-backup
+  STATE_DIR=/var/lib/medical-records-backup
+  APP_STOP_CMD="medical-records-compose stop app"
+  APP_START_CMD="medical-records-compose start app"
+  DATA_OWNER=10001:10001
+  ```
+
+- `restic init`, only when the bucket holds no repository yet; then the nightly timer (02:30 IST).
+
+It does **not** take a first backup by itself (on a rebuilt VM that would put an empty snapshot on top of the real
+ones). The agent backs up before every switch to a new image, and the timer every night. Once the app runs, take
+the first one by hand and check it:
+
 ```bash
-sudo sh -c 'openssl rand -base64 32 > /etc/medical-records/restic-password'
-sudo chmod 600 /etc/medical-records/restic-password
-sudo cat /etc/medical-records/restic-password        # copy it into your password manager NOW, and on paper
-
-sudo install -m 600 /opt/medical-records/scripts/backup.env.example /etc/medical-records/backup.env
-sudo nano /etc/medical-records/backup.env
-```
-
-In `backup.env` set:
-
-```bash
-DATA_DIR=/srv/medical-records/data
-RESTIC_REPOSITORY=s3:https://<namespace>.compat.objectstorage.ap-mumbai-1.oraclecloud.com/medical-records-backup
-AWS_DEFAULT_REGION=ap-mumbai-1
-AWS_ACCESS_KEY_ID=<backup-writer access key from A9>
-AWS_SECRET_ACCESS_KEY=<backup-writer secret key from A9>
-RESTIC_PASSWORD_FILE=/etc/medical-records/restic-password
-RESTIC_CACHE_DIR=/var/cache/medical-records-backup
-STATE_DIR=/var/lib/medical-records-backup
-APP_STOP_CMD="systemctl stop medical-records"
-APP_START_CMD="systemctl start medical-records"
-```
-
-```bash
-# Create the (empty, encrypted) repository in the bucket, once:
-sudo bash -c 'set -a; source /etc/medical-records/backup.env; restic -o s3.bucket-lookup=path init'
-
-sudo cp /opt/medical-records/deploy/systemd/medical-records-backup.{service,timer} /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl start medical-records-backup.service  # the first backup, now
+sudo systemctl start medical-records-backup.service  # a backup, now
 sudo journalctl -u medical-records-backup.service -n 30
-sudo systemctl enable --now medical-records-backup.timer
 systemctl list-timers medical-records-backup.timer   # next run: about 02:30 IST
 curl -s https://records.yourname.in/api/health/backup   # {"status":"ok"}
 ```
@@ -470,8 +511,9 @@ user data.
    - `Medical records: disk` → `https://records.yourname.in/api/health/disk`
    - `Medical records: backup` → `https://records.yourname.in/api/health/backup`
 3. Alert the email contact on "down" and "up" for each.
-4. Test it: `sudo systemctl stop medical-records`. Within about 10 minutes you get emails for all three.
-   `sudo systemctl start medical-records`, and the "up" emails follow.
+4. Test it: `sudo medical-records-compose stop app`. Within about 10 minutes you get emails for all three.
+   `sudo medical-records-compose start app`, and the "up" emails follow. (The agent does not restart a stopped
+   app; it only acts when the `prod` tag moves.)
 
 **Admin → Server** in the app shows the details: disk use per disk, the last good and failed backup, and when the
 app started. If Oracle ever stops or reclaims the VM, the `app` monitor reports it.
@@ -527,23 +569,26 @@ Then invite people from **Profile → Admin** (see the README, "Inviting people"
 
 ### C1. Updating the app
 
+A new version reaches a VM only by moving its tag in OCIR; the agent (B9) does the rest. Until the CI/CD pipeline
+does this, publish by hand as in B9:
+
+1. Push the image (`sha-<commit>`) and move **`staging`** to it. Within about 2 minutes staging runs it; check
+   `https://staging-records.yourname.in/api/version` (its `commit`) and try the app there with synthetic data.
+2. Move **`prod`** to the same image. The prod agent backs up, then deploys; check
+   `https://records.yourname.in/api/version` and `journalctl -u medical-records-deploy -n 30` on prod.
+
+If the new image is not healthy within 3 minutes, the agent goes back to the previous one by itself and skips that
+image. To roll back a release that is healthy but wrong, move the tag back to the previous image:
+
 ```bash
-sudo systemctl start medical-records-backup.service  # a fresh backup first
-cd /opt/medical-records
-git fetch --tags && git checkout vX.Y.Z              # the new release
-backend/.venv/bin/pip install -r backend/requirements.txt
-cd frontend && npm ci && npm run build && cd ..
-sudo cp deploy/systemd/*.service deploy/systemd/*.timer /etc/systemd/system/ && sudo systemctl daemon-reload
-sudo systemctl restart medical-records
-curl -s https://records.yourname.in/api/health       # {"status":"ok"}
+docker buildx imagetools create -t $REPO:prod $REPO:sha-<previous commit>   # or the previous digest
 ```
 
-Deploy only tagged releases. To make one, on your own computer, after CI is green on `main`:
-`git checkout main && git pull && git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`. `git tag` on the server
-lists the releases; `git describe --tags` shows the one that is running.
+(The previous digest is in `/var/lib/medical-records/previous-digest` and `deploy.log` on the VM.)
 
-Database migrations run by themselves when the app starts. Before changing the database, the app saves a copy to
-`/srv/medical-records/data/backups/pre-<revision>-<time>.db`.
+Database migrations run by themselves when the app starts, and only go forward. Before changing the database, the
+app saves a copy to `/srv/medical-records/data/backups/pre-<revision>-<time>.db`. Rolling back to an image older than
+a database change needs a restore (C4), not just the tag.
 
 ### C2. Checking the backups
 
@@ -560,35 +605,45 @@ The last command shows how much of the Object Storage allowance (20 GB at the ti
 
 A backup is only useful if it restores. Do this monthly, and always after changing anything about backups.
 
+0. Pause the agent, so nothing is deployed during the drill: `sudo touch /etc/medical-records/deploy-paused`.
 1. Restore the latest snapshot into a scratch folder. The live data is not touched:
 
    ```bash
-   sudo /opt/medical-records/scripts/restore.sh            # or: restore.sh <snapshot id> (see "restic snapshots")
+   sudo /opt/medical-records/repo/scripts/restore.sh       # or: restore.sh <snapshot id> (see "restic snapshots")
    ```
 
    The report must say `OK database integrity check` and `OK every document has its file`. It also shows the
    schema revision and the number of users, records and documents; they should match what you expect.
-2. Optionally look at the restored data with the app on another port, reachable only from the VM (use the folder
-   printed in step 1):
+2. Optionally look at the restored data with the running image on another port, reachable only from the VM (use
+   the folder printed in step 1):
 
    ```bash
-   cd /opt/medical-records/backend
-   sudo --preserve-env=PATH bash -c 'set -a; source /etc/medical-records/app.env;
-     DATABASE_URL=sqlite:////var/lib/medical-records-backup/restore-XXXXXX/database/medical_records.db \
-     FILES_DIR=/var/lib/medical-records-backup/restore-XXXXXX/files \
-     .venv/bin/python -m app --port 8001'
+   R=/var/lib/medical-records-backup/restore-XXXXXX
+   sudo chown -R 10001:10001 $R
+   sudo bash -c 'source /opt/medical-records/compose/.env; docker run --rm --read-only --tmpfs /tmp --user 10001:10001 \
+     --env-file /etc/medical-records/app.env -e CLAMAV_SOCKET= -e BACKUP_STATUS_DIR= -e SYSTEM_DISK_PATH= \
+     -e DATABASE_URL=sqlite:////data/database/medical_records.db -e FILES_DIR=/data/files \
+     -v '$R':/data -p 127.0.0.1:8001:8000 "$APP_IMAGE"'
    ```
 
    From your computer: `ssh -L 8001:127.0.0.1:8001 -i ~/.ssh/oracle-medical-records ubuntu@<public IP>`, then open
    <http://localhost:8001>. Sign-in needs an OAuth redirect for that address, so the report from step 1 is
-   usually enough.
+   usually enough. Stop it with Ctrl+C.
 3. Delete the restored folder. **It is not encrypted.**
 
    ```bash
    sudo rm -rf /var/lib/medical-records-backup/restore-*
    ```
 
-4. Note the drill below.
+4. Make sure the stack runs and resume the agent:
+
+   ```bash
+   sudo medical-records-compose up -d --wait          # starts the stack if anything stopped; else changes nothing
+   sudo medical-records-compose ps
+   sudo rm /etc/medical-records/deploy-paused
+   ```
+
+5. Note the drill below.
 
 | Date | Snapshot | Result | Notes |
 | --- | --- | --- | --- |
@@ -596,15 +651,31 @@ A backup is only useful if it restores. Do this monthly, and always after changi
 
 ### C4. Disaster recovery (the VM or its disk is gone)
 
-1. Create a new VM (A6) and, if the data volume is gone too, a new block volume (A8). Point DNS at the new IP (A10).
-2. Follow Part B up to and including B9 (B4: run `mkfs` only on a new, empty volume), then the `backup.env` part
-   of B11 with the **same** repository and restic password. **Do not** run `restic init` again.
-3. `sudo /opt/medical-records/scripts/restore.sh --apply`. It restores the latest snapshot, checks it, stops the
-   app, puts the data in place and starts the app. A backup from an older version is upgraded when the app starts.
-4. Enable the backup timer (end of B11) and check the UptimeRobot monitors are green.
+1. Recreate what is gone with Terraform (`terraform apply` in `infra/`: the VM, and the data volume if it is lost too).
+   Point DNS at the IP if it changed (A10; the reserved IPs normally survive).
+2. **Before** host-setup, put the **same** restic password in place, so it is not replaced by a new one:
+   `sudo install -d -m 700 /etc/medical-records && sudo install -m 600 /dev/stdin /etc/medical-records/restic-password`
+   (paste it, then Ctrl+D).
+3. Run `host-setup.sh --env prod` (Part B), with the same `backup-writer` key; `--format-data-volume` only for a
+   new, empty volume. It finds the existing repository and does not run `restic init`. The agent then deploys the
+   `prod` image on an empty database.
+4. Stop the nightly timer until the restore is done (`sudo systemctl stop medical-records-backup.timer`), and pick
+   the **snapshot from before the disaster** by its ID and time:
+
+   ```bash
+   sudo bash -c 'set -a; source /etc/medical-records/backup.env; restic -o s3.bucket-lookup=path snapshots'
+   sudo /opt/medical-records/repo/scripts/restore.sh --apply <snapshot id>
+   sudo systemctl start medical-records-backup.timer
+   ```
+
+   `restore.sh --apply` restores it, checks it, holds the agent's lock, stops the app, puts the data in place (owned
+   by 10001) and starts the app. A backup from an older version is upgraded when the app starts. Never restore
+   "latest" blindly here: a backup taken on the new, empty VM would be the latest.
+5. Check the UptimeRobot monitors are green.
 
 To roll back on a working server (for example after a bad change), `restore.sh --apply <snapshot id>` does the
-same; the data it replaces is moved to `/srv/medical-records/data.before-restore-<time>`, never deleted.
+same; the data it replaces is moved to `/srv/medical-records/data.before-restore-<time>`, never deleted. If the bad
+change came with a new image, move the `prod` tag back first (C1), or the agent keeps the newer image.
 
 Restoring brings back **all accounts' data** as it was at that time (it is not a way to restore one person), and
 everyone is signed out.
@@ -627,13 +698,17 @@ everyone is signed out.
 Off by default. When it is on, every uploaded file is scanned before it is saved; if the scanner does not answer,
 the upload is refused (never saved unscanned). clamd needs about 1 GB of RAM.
 
+On prod, `host-setup.sh` does this; staging has no scanner. By hand:
+
 ```bash
 sudo apt-get install -y clamav-daemon
 sudo systemctl enable --now clamav-freshclam clamav-daemon     # signatures update by themselves
-sudo usermod -aG clamav medical-records                          # so the app can use clamd's socket
 echo 'CLAMAV_SOCKET=/run/clamav/clamd.ctl' | sudo tee -a /etc/medical-records/app.env
-sudo systemctl restart medical-records
+sudo medical-records-compose up -d --force-recreate --wait app   # the app reads app.env when it is created
 ```
+
+clamd runs on the VM, not in the stack; the app container sees the VM's `/run/clamav` folder (read-only), where
+systemd keeps clamd's socket open to every user.
 
 To check it: download the harmless EICAR test file from eicar.org and run `clamdscan eicar.com` (it must say
 `FOUND`); then upload an ordinary PDF in the app. It only saves if clamd answered. (Uploading the EICAR file to the
@@ -643,14 +718,17 @@ app is not a useful test: the app refuses it earlier, because it is not a real P
 
 | Problem | Look at |
 | --- | --- |
-| Browser cannot connect at all | DNS (A10), security list ports 80/443 (A4), VM firewall (B2), `systemctl status caddy` |
-| Certificate error | `journalctl -u caddy -n 50`: Let's Encrypt needs the DNS record and port 80 open |
-| "502 Bad Gateway" | the app is down: `systemctl status medical-records`, `journalctl -u medical-records -n 50` |
-| App will not start ("Invalid configuration") | the listed setting in `/etc/medical-records/app.env` (B7) |
+| Browser cannot connect at all | DNS (A10), security list ports 80/443 (A4), VM firewall (B2), `sudo medical-records-compose ps` |
+| Certificate error | `journalctl -t medical-records-caddy -n 50`: Let's Encrypt needs the DNS record and port 80 open |
+| "502 Bad Gateway" | the app is down: `sudo medical-records-compose ps`, `journalctl -t medical-records-app -n 50` |
+| A new version does not appear | `journalctl -u medical-records-deploy -n 30` (B9): paused? a known-bad image? the backup before the switch failed? |
+| `unauthorized` from `bom.ocir.io` in the agent's log | the `vm-image-puller` auth token (A12): `sudo docker login bom.ocir.io -u <namespace>/vm-image-puller` |
+| App will not start ("Invalid configuration") | the listed setting in `/etc/medical-records/app.env` (B7), then `sudo medical-records-compose up -d --force-recreate --wait app` |
+| `permission denied` on `/data` in the app's log | the data folder must belong to 10001 (B5) |
 | Google says `redirect_uri_mismatch` | the redirect URI in A11 must equal `GOOGLE_REDIRECT_URI` exactly |
 | Invited person sees "has no invite" / "different Google account" | they must use the invite link, with the Google account for the invited email |
 | `/api/health/backup` red | `journalctl -u medical-records-backup.service -n 50`; then run the backup by hand (B11) |
-| Disk alert | **Admin → Server**; `sudo du -sh /srv/medical-records/data/* /var/log/journal` |
+| Disk alert | **Admin → Server**; `sudo du -sh /srv/medical-records/data/* /var/log/journal`; old images: `sudo docker system df` |
 
 Test the backup scripts without any cloud account: `PYTHON=backend/.venv/bin/python scripts/test-backup.sh` (needs
 restic). CI runs this on every push.

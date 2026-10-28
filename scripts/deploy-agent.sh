@@ -125,14 +125,21 @@ healthy() {
 # ---------- deploy ----------
 log "Deploying $image ('$tag'; running now: ${current:-nothing})"
 if [[ -n "$current" && -n "$BACKUP_SERVICE" ]]; then
+  # After a failed backup, wait 30 minutes before trying again for the same image, instead of every 2 minutes.
+  read -r failed_digest failed_at <<<"$(state backup-failed)"
+  if [[ "${failed_digest:-}" == "$digest" ]] && (($(date +%s) - ${failed_at:-0} < 1800)); then
+    exit 1
+  fi
   log "Backup before switching ($BACKUP_SERVICE)"
   if ! systemctl start "$BACKUP_SERVICE"; then
+    echo "$digest $(date +%s)" >"$STATE_DIR/backup-failed"
     record "FAILED $digest: the backup before the switch failed; nothing changed"
     echo "The backup before the switch failed: nothing changed. See journalctl -u $BACKUP_SERVICE" >&2
     exit 1
   fi
 fi
 
+rm -f "$STATE_DIR/backup-failed"
 docker pull -q "$image" >/dev/null
 revision="$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
 if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
