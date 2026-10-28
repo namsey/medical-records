@@ -27,6 +27,24 @@ output "ubuntu_image" {
   value       = local.ubuntu_image_id
 }
 
+output "ocir_registry" {
+  description = "DEPLOY.md A12: the region's container registry host (docker login, host-setup.sh --registry)"
+  value       = local.ocir_registry
+}
+
+output "ocir_repository" {
+  description = "DEPLOY.md A12: host-setup.sh --repository and the OCIR_REPOSITORY variable of the pipeline"
+  value       = "${local.ocir_registry}/${data.oci_objectstorage_namespace.ns.namespace}/${oci_artifacts_container_repository.app.display_name}"
+}
+
+output "ocir_usernames" {
+  description = "docker login usernames (password: the user's auth token). Users in the Default identity domain sign in as <namespace>/<user>; users in another identity domain as <namespace>/<domain name>/<user>."
+  value = {
+    ci_image_pusher = "${data.oci_objectstorage_namespace.ns.namespace}/${oci_identity_user.ci_image_pusher.name}"
+    vm_image_puller = "${data.oci_objectstorage_namespace.ns.namespace}/${oci_identity_user.vm_image_puller.name}"
+  }
+}
+
 output "restic_repository" {
   value = "s3:https://${data.oci_objectstorage_namespace.ns.namespace}.compat.objectstorage.${var.region}.oraclecloud.com/${oci_objectstorage_bucket.backup.name}"
 }

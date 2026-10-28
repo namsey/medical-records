@@ -1,5 +1,13 @@
 # Same site as DEPLOY.md B9, with the app container as the upstream. SITE_DOMAIN comes from compose:
 # a domain name gets HTTPS from Let's Encrypt; http://localhost (compose.dev.yaml) is plain HTTP.
+{
+	# No HTTP/3: UDP 443 is closed in the OCI security list and iptables. Advertising it made phones try QUIC
+	# first, and uploads then failed with "Could not reach the server".
+	servers {
+		protocols h1 h2
+	}
+}
+
 {$SITE_DOMAIN} {
 	encode gzip
 	request_body {

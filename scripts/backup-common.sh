@@ -29,6 +29,10 @@ STAGING_DIR="${STAGING_DIR:-$(dirname "$DATA_DIR")/.backup-staging}"
 DB_FILE="$DATA_DIR/medical_records.db"
 FILES_DIR="$DATA_DIR/files"
 
+# Shared with the deploy agent: restore.sh --apply holds it, so no deploy starts the app halfway through.
+DEPLOY_LOCK="${DEPLOY_LOCK:-/run/lock/medical-records-deploy.lock}"
+DEPLOY_LOCK_WAIT="${DEPLOY_LOCK_WAIT:-600}"
+
 # One fixed host name, so snapshots and retention stay in one group even after moving to a new VM.
 BACKUP_HOST="medical-records"
 RETENTION=(--keep-daily 7 --keep-weekly 4 --keep-monthly 6)

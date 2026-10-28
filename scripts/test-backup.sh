@@ -29,6 +29,7 @@ STATE_DIR=$STATE
 PYTHON=$PYTHON
 APP_STOP_CMD="touch $WORK/app-stopped"
 APP_START_CMD="touch $WORK/app-started"
+DEPLOY_LOCK=$WORK/deploy.lock
 EOF
 export RESTIC_REPOSITORY="$REPO" RESTIC_PASSWORD_FILE="$WORK/password" RESTIC_CACHE_DIR="$WORK/cache"
 restic init --quiet
@@ -54,11 +55,16 @@ sleep 1
 "$SCRIPTS/backup.sh" >"$WORK/backup-2.log" 2>&1 || { cat "$WORK/backup-2.log"; fail "backup"; }
 [[ "$(cat "$STATE/last-success")" != "$first_success" ]] || fail "last-success was not updated"
 rm -rf "$DATA"
+# On a new server the restored data gets DATA_OWNER (the app container's uid:gid; only root can give it away).
+owner="$(id -u):$(id -g)"
+[[ "$(id -u)" == "0" ]] && owner="10001:10001"
+echo "DATA_OWNER=$owner" >>"$BACKUP_ENV"
 "$SCRIPTS/restore.sh" --apply --yes >"$WORK/restore-2.log" 2>&1 || { cat "$WORK/restore-2.log"; fail "restore --apply"; }
 after="$("$PYTHON" "$SCRIPTS/tests/app_data.py" fingerprint "$DATA")"
 [[ "$before" == "$after" ]] || fail "restored data differs from the backed-up data"
 [[ -e "$WORK/app-stopped" && -e "$WORK/app-started" ]] || fail "the app was not stopped and started"
-pass "restore --apply brings back identical database rows and files"
+[[ -z "$(find "$DATA" ! -user "${owner%:*}" -o ! -group "${owner#*:}" | head -1)" ]] || fail "restored data is not owned by DATA_OWNER"
+pass "restore --apply brings back identical database rows and files, owned by DATA_OWNER"
 
 sqlite3_sessions="$("$PYTHON" -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('select count(*) from sessions').fetchone()[0])" "$DATA/medical_records.db")"
 [[ "$sqlite3_sessions" == "0" ]] || fail "login sessions were backed up"
@@ -71,6 +77,19 @@ touch "$marker"
 [[ ! -e "$marker" ]] || fail "the live data was not replaced"
 ls "$DATA".before-restore-*/files/kept-by-restore >/dev/null 2>&1 || fail "the previous data was not kept aside"
 pass "restore --apply keeps the previous data in DATA_DIR.before-restore-<time>"
+
+# 3b. While the deploy agent holds its lock, restore --apply gives up without touching anything.
+rm -f "$WORK/app-stopped"
+exec 7>"$WORK/deploy.lock"
+flock -n 7
+if DEPLOY_LOCK_WAIT=1 "$SCRIPTS/restore.sh" --apply --yes >"$WORK/restore-locked.log" 2>&1; then
+  fail "restore --apply ran while a deploy held the lock"
+fi
+exec 7>&-
+[[ ! -e "$WORK/app-stopped" ]] || fail "the app was stopped although the restore gave up"
+[[ -z "$(find "$STATE" -maxdepth 1 -name 'restore-*' -print -quit)" ]] || fail "a restored copy was left behind"
+grep -q "A deploy is still running" "$WORK/restore-locked.log" || fail "no clear message when a deploy holds the lock"
+pass "restore --apply waits for a running deploy and gives up cleanly"
 
 # 4. A failed backup exits non-zero, keeps last-success and leaves no unencrypted copy.
 good_success="$(cat "$STATE/last-success")"

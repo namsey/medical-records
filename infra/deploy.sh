@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# SUPERSEDED by scripts/host-setup.sh (ctr-3): the VMs now run the Compose stack from OCI Container Registry and
+# deploy themselves (DEPLOY.md Part B). This script sets up the old build-on-the-VM systemd service and host Caddy;
+# it is kept for reference only. Do not run it on a VM prepared by host-setup.sh (it would fight over ports 80/443),
+# and note it copies deploy/systemd/medical-records-backup.service, which now expects /opt/medical-records/repo.
+#
 # Server setup for the medical-records VM: DEPLOY.md B2-B11 and C6, safe to re-run.
 #
 #   sudo ./deploy.sh --domain D --admin-email E --namespace NS [--grievance-name NAME] [--format-data-volume]
@@ -26,7 +31,7 @@ while [[ $# -gt 0 ]]; do
     --namespace) namespace="$2"; shift ;;
     --grievance-name) grievance_name="$2"; shift ;;
     --format-data-volume) format_volume=1 ;;
-    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
     *) echo "Unknown option $1" >&2; exit 2 ;;
   esac
   shift

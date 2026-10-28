@@ -39,7 +39,7 @@ for Oracle Cloud's free tier in India, see [DEPLOY.md](DEPLOY.md)), and keeps ev
 | Backend  | Python, FastAPI, SQLAlchemy 2, Alembic, Pydantic |
 | Database | SQLite (one file, WAL mode) |
 | Files    | Local disk, one folder per account, served only through authenticated API endpoints |
-| Server   | One VM: Caddy (HTTPS) in front of the app (systemd); restic backups; see [DEPLOY.md](DEPLOY.md) |
+| Server   | Two VMs (prod, staging): Docker Compose stack, Caddy (HTTPS) in front of the app image from OCI Container Registry, deployed by an agent when the env tag moves; restic backups (prod); see [DEPLOY.md](DEPLOY.md) |
 
 In production one process serves everything: FastAPI serves the API under `/api` and the built React app.
 

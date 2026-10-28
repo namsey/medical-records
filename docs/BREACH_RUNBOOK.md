@@ -24,19 +24,32 @@ Keep a running log from the first minute: time, what you saw, what you did. Use 
 
 Do what fits. When in doubt, contain more rather than less.
 
-1. **Take the app offline** if the server itself may be compromised: `sudo systemctl stop medical-records` (or stop
-   the container). Leave the VM running so evidence is kept.
+1. **Take the app offline** if the server itself may be compromised. First pause the deploy agent, so a new image
+   cannot start it again, then stop the app; leave the VM running so evidence is kept:
+
+   ```bash
+   sudo touch /etc/medical-records/deploy-paused
+   sudo medical-records-compose stop app
+   ```
 2. **Disable affected accounts:** Admin → Accounts → Disable. This signs them out at once.
-3. **Sign everyone out and void all invite links:** change `SESSION_SECRET` in the app's environment and restart.
-   Every session and every pending invite link stops working.
+3. **Sign everyone out and void all invite links:** change `SESSION_SECRET` in `/etc/medical-records/app.env` and
+   **recreate** the app: `sudo medical-records-compose up -d --force-recreate --wait app`. A plain restart keeps the
+   old secret, because the container reads `app.env` only when it is created. Every session and every pending invite
+   link stops working.
 4. **Rotate secrets** that may have leaked:
-   - Google OAuth client secret (Google Cloud console → Credentials), then update `GOOGLE_CLIENT_SECRET`.
+   - Google OAuth client secret (Google Cloud console → Credentials), then update `GOOGLE_CLIENT_SECRET` and
+     recreate the app as in step 3.
+   - The OCIR auth tokens of `ci-image-pusher` and `vm-image-puller` (DEPLOY.md A12): whoever holds the pusher's
+     token can deploy any image. Generate new ones, update the GitHub secret and `docker login` on both VMs, then
+     delete the old ones.
    - Oracle Customer Secret Keys for `backup-writer` and `backup-reader` (delete the old ones, make new ones).
    - The restic password, if it may be known: `restic key add`, then `restic key remove <old id>`. Update the
      password file on the VM and in your password manager.
    - SSH keys for the VM, and the Oracle console password and 2-factor if the account may be affected.
 5. **Keep evidence:** before changing the server further, take a block volume backup in the Oracle console, and
-   copy the app's logs and `journalctl` output somewhere safe.
+   copy the logs somewhere safe. The app's and Caddy's logs are in the journal, also from containers that were
+   recreated since: `journalctl -t medical-records-app -t medical-records-caddy --since <date>`; deploys in
+   `journalctl -u medical-records-deploy` and `/var/lib/medical-records/deploy.log`.
 
 ## 3. Assess: what happened and to whom (first day)
 

@@ -1,0 +1,14 @@
+[Unit]
+Description=Medical records: deploy the image the OCIR tag for this VM points at
+Documentation=file:///opt/medical-records/repo/DEPLOY.md
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# The OCIR login of the pull-only user (host-setup.sh) is in root's docker config.
+Environment=DOCKER_CONFIG=/root/.docker
+ExecStart=/usr/local/sbin/medical-records-deploy
+# Long enough for the prod backup taken before a switch.
+TimeoutStartSec=2h
