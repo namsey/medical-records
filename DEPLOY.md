@@ -251,7 +251,7 @@ repository:
 
 | User | Group / policy | Used by | May |
 | --- | --- | --- | --- |
-| `ci-image-pusher` | `medical-records-image-pushers`, *use repos* | GitHub Actions (and you, until the pipeline exists: B9) | push images, move tags |
+| `ci-image-pusher` | `medical-records-image-pushers`, *manage repos* (read and update only) | GitHub Actions (and you, until the pipeline exists: B9) | push images, move tags |
 | `vm-image-puller` | `medical-records-image-pullers`, *read repos* | both VMs | pull only |
 
 1. In `infra/`: `terraform plan` (it adds the repository, two groups, two users, two memberships and one policy,
