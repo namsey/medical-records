@@ -64,8 +64,9 @@ resource "oci_identity_user_group_membership" "vm_image_puller" {
   user_id  = oci_identity_user.vm_image_puller.id
 }
 
-# "use repos" allows pushing images and tags to an existing repository (retagging is a push of the same manifest
-# under another tag) but not creating or deleting repositories or images; "read repos" allows pulling only.
+# A push (and a retag, which is a push of the same manifest under another tag) needs REPOSITORY_READ and
+# REPOSITORY_UPDATE, which only "manage repos" grants ("use repos" was refused: "not authorized"). The pusher gets
+# just those two, so it cannot create or delete repositories or images; "read repos" allows pulling only.
 resource "oci_identity_policy" "images" {
   compartment_id = local.compartment_id
   name           = "${local.name}-images"
@@ -73,7 +74,7 @@ resource "oci_identity_policy" "images" {
   freeform_tags  = merge(local.tags, { env = "shared" })
 
   statements = [
-    "Allow group ${oci_identity_group.image_pushers.name} to use repos in compartment ${var.compartment_name} where target.repo.name = '${oci_artifacts_container_repository.app.display_name}'",
+    "Allow group ${oci_identity_group.image_pushers.name} to manage repos in compartment ${var.compartment_name} where all { target.repo.name = '${oci_artifacts_container_repository.app.display_name}', any { request.permission = 'REPOSITORY_READ', request.permission = 'REPOSITORY_UPDATE' } }",
     "Allow group ${oci_identity_group.image_pullers.name} to read repos in compartment ${var.compartment_name} where target.repo.name = '${oci_artifacts_container_repository.app.display_name}'",
   ]
 }
