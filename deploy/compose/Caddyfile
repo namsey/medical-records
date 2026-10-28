@@ -1,0 +1,9 @@
+# Same site as DEPLOY.md B9, with the app container as the upstream. SITE_DOMAIN comes from compose:
+# a domain name gets HTTPS from Let's Encrypt; http://localhost (compose.dev.yaml) is plain HTTP.
+{$SITE_DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy app:8000
+}

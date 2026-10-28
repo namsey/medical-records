@@ -1,0 +1,80 @@
+# The same stack on a laptop (ctr-2): the image is built from this checkout, plain HTTP on
+# http://localhost:8000, data in data-dev/ at the repository root. Synthetic data only.
+#
+#   mkdir -p data-dev && sudo chown 10001:10001 data-dev   # Linux; Docker Desktop needs only mkdir
+#   docker compose -f deploy/compose/compose.dev.yaml up --build
+#
+# Settings come from the repository's .env (never committed): use a separate dev Google OAuth client
+# whose redirect URI is http://localhost:8000/api/auth/callback.
+
+name: medical-records-dev
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  app:
+    build:
+      context: ../..
+      args:
+        GIT_SHA: ${GIT_SHA:-}
+        APP_VERSION: ${APP_VERSION:-dev}
+    image: medical-records:dev
+    env_file: ${APP_ENV_FILE:-../../.env}
+    environment:
+      DATABASE_URL: sqlite:////data/medical_records.db
+      FILES_DIR: /data/files
+      UPLOAD_DIR: /data/uploads
+      FORWARDED_ALLOW_IPS: 172.30.0.10
+      SYSTEM_DISK_PATH: ""
+    volumes:
+      - ${DATA_DIR:-../../data-dev}:/data
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: ${APP_MEMORY_LIMIT:-1g}
+    stop_grace_period: 40s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging: *logging
+    networks:
+      web:
+        ipv4_address: 172.30.0.20
+
+  caddy:
+    image: caddy:2.11.7@sha256:504a44d7d74bd2bc28a66afc4774912fc21223ca8a67734af1c54ab2f999b489
+    environment:
+      SITE_DOMAIN: http://localhost
+    ports:
+      - "127.0.0.1:8000:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+    logging: *logging
+    networks:
+      web:
+        ipv4_address: 172.30.0.10
+
+networks:
+  web:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  caddy_data:
+  caddy_config:

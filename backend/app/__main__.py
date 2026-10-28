@@ -4,7 +4,7 @@ import argparse
 
 import uvicorn
 
-from app.config import BACKEND_ROOT
+from app.config import BACKEND_ROOT, get_settings
 
 
 def main() -> None:
@@ -13,6 +13,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000, help="port (default: 8000)")
     parser.add_argument("--reload", action="store_true", help="restart on code changes (development)")
     args = parser.parse_args()
+    settings = get_settings()
     uvicorn.run(
         "app.main:app",
         host=args.host,
@@ -21,6 +22,8 @@ def main() -> None:
         reload_dirs=[str(BACKEND_ROOT / "app")] if args.reload else None,
         access_log=False,
         proxy_headers=True,
+        forwarded_allow_ips=settings.forwarded_allow_ips,
+        timeout_graceful_shutdown=settings.shutdown_grace_seconds,
     )
 
 

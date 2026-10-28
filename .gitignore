@@ -44,3 +44,6 @@ infra/*.log
 infra/.terraform.tfstate.lock.info
 *.tfvars
 !*.tfvars.example
+
+# Docker Compose data on a laptop (deploy/compose/compose.dev.yaml)
+data-dev/
