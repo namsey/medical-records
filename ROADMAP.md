@@ -48,6 +48,19 @@ Work top to bottom. Each item lists what "done" means.
   - Notes: ci.yml adds hadolint and a multi-arch build + Trivy scan (CRITICAL/HIGH with a fix). deliver.yml never runs for PRs and never connects to a VM; scripts/move-env-tag.sh moves a tag, waits for /api/version to report the commit, runs scripts/smoke-test.sh (anonymous GETs only) and moves the tag back on failure. Releases require a successful staging deployment of the same commit; version tags never move. scripts/prune-report.sh lists old sha-* images but deletes nothing (deleting needs an OCI API key). Tested with scripts/test-delivery.sh against a local stand-in site and registry; the workflows themselves first run for real after merge. Setup (variables, secrets, environments with a required reviewer) is in docs/CICD.md. Deferred: automatic deletion of old images.
   - Notes (fix): the first Trivy scan on main failed on 5 HIGH CVEs in the base image's pip (vendored urllib3, msgpack, setuptools); the runtime image now uninstalls pip after installing the requirements.
 
+## Monitoring (plan and details: docs/MONITORING.md sections 14 and 15)
+Grafana Alloy on each VM pushes metrics and logs to Grafana Cloud (free tier); Ansible, run only by the owner from
+the laptop, installs it. Deliver still never connects to a VM, and UptimeRobot (#45) stays as the outside check.
+- [x] mon-1 Monitoring agent as code: ansible/ (inventory, monitoring.yml, the alloy role: pinned apt install, journal access, token from an ansible-vault file in /etc/default/alloy, config checked with `alloy validate`), the Alloy config (VM metrics, systemd unit states, filtered journal logs with email/phone masking, optional app metrics), the Ops lint workflow and docs/MONITORING.md.
+  - Notes: Every rendered config (staging/prod, app metrics on/off) passes `alloy validate` with Alloy 1.21.3 and starts; the log filter and masking were tested with sample lines; ansible-lint passes the production profile. Not yet run on a VM (that is mon-2).
+- [ ] mon-2 Agent live on staging, then prod. Depends on: mon-1. Owner: Grafana Cloud stack, write-only token, encrypted vault, VM IPs, then `ansible-playbook monitoring.yml` on staging and a day later prod (MONITORING.md steps 2-6). Done when `up{env=...}` is 1 for both, the app's logs show in Loki and a second run reports changed=0.
+- [ ] mon-3 App metrics: request count, errors and latency per route template on a private METRICS_PORT (default 8001, 0 disables), never mounted on the public app; Alloy scrapes it (alloy_scrape_app). Depends on: mon-2.
+- [ ] mon-4 Dashboards and alerts as code: infra/grafana/ (Grafana Terraform provider, local state) with the alert rules of MONITORING.md section 7, an email contact point and an app dashboard; fmt/validate in CI. Depends on: mon-2 (app panels and alerts after mon-3).
+- [ ] mon-5 Deploy annotations: Deliver marks each staging and prod deploy in Grafana (never fails a deploy). Depends on: mon-2.
+- [ ] mon-6 Alert runbook: for every alert, what it means and the first steps, linked to DEPLOY.md and BREACH_RUNBOOK.md. Depends on: mon-4.
+- [ ] mon-7 Privacy and docs: Grafana Cloud in DEPLOY.md B12 and its checklist, README, and the privacy notice if it lists service providers. Depends on: mon-2.
+- [ ] mon-8 (optional) More of host-setup.sh as Ansible roles, one step per PR, each confirmed by the owner with --check --diff showing changed=0. Depends on: mon-2.
+
 ## Parked (not planned)
 Do not implement or suggest these unless I explicitly ask.
 

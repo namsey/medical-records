@@ -1,6 +1,8 @@
 # Working rules for this repo
 
 This is a personal medical records app (private health journal). The feature plan lives in ROADMAP.md.
+For the monitoring items (mon-*), docs/MONITORING.md sections 14 and 15 hold the plan, the guardrails and what
+stays with me.
 
 ## How to implement a roadmap item
 1. Read ROADMAP.md and the item asked for. Check its "Depends on" items are done (checked). If not, stop and tell me.

@@ -1,0 +1,29 @@
+---
+# Renders the Alloy templates locally with dummy values, so CI can check them with `alloy validate` without any
+# server or Grafana Cloud credentials (.github/workflows/ops-lint.yml). Run it yourself with:
+#   cd ansible && ansible-playbook tests/render.yml -i localhost, -e out=/tmp/alloy-render -e alloy_env=prod
+- name: Render the Alloy configuration with dummy values
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../roles/alloy/defaults/main.yml
+  tasks:
+    - name: Create the output folder
+      ansible.builtin.file:
+        path: "{{ out }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render config.alloy (app metrics off and on)
+      ansible.builtin.template:
+        src: ../roles/alloy/templates/config.alloy.j2
+        dest: "{{ out }}/config-{{ alloy_env }}-app-{{ item }}.alloy"
+        mode: "0644"
+      vars:
+        alloy_scrape_app: "{{ item }}"
+        alloy_grafana_cloud_prometheus_url: "https://prometheus.example.grafana.net/api/prom/push"
+        alloy_grafana_cloud_prometheus_user: "1234567"
+        alloy_grafana_cloud_loki_url: "https://logs.example.grafana.net/loki/api/v1/push"
+        alloy_grafana_cloud_loki_user: "7654321"
+      loop: [false, true]

@@ -1,0 +1,6 @@
+# A vault password file must never be committed.
+*.vault-pass
+.vault-pass*
+# Retry files and local fact caches.
+*.retry
+.ansible/

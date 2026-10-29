@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+# Read by alloy.service (EnvironmentFile). Mode 640, owner root, group alloy: it holds the Grafana Cloud token.
+
+# The configuration file Alloy runs.
+CONFIG_FILE="/etc/alloy/config.alloy"
+
+# UI/API on localhost only; no usage reporting to Grafana Labs.
+CUSTOM_ARGS="--server.http.listen-addr={{ alloy_listen_address }} --disable-reporting"
+
+# Restart Alloy when the package is upgraded.
+RESTART_ON_UPGRADE=true
+
+# Grafana Cloud access policy token (metrics:write, logs:write), from the Ansible vault.
+GRAFANA_CLOUD_TOKEN="{{ alloy_grafana_cloud_token }}"

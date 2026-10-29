@@ -1,0 +1,7 @@
+---
+# Copy to vault.yml, put the real token in, then encrypt it before committing:
+#   cp vault.yml.example vault.yml
+#   ansible-vault encrypt vault.yml          # choose a long password and keep it in your password manager
+#   ansible-vault edit vault.yml             # to change it later
+# The encrypted file is safe to commit. The plain one never is (.gitignore lists the usual leftovers).
+vault_grafana_cloud_token: "glc_REPLACE_WITH_THE_ACCESS_POLICY_TOKEN"

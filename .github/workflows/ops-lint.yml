@@ -1,0 +1,62 @@
+name: Ops lint
+
+# Checks the Ansible role and the Alloy configuration on every pull request that touches them. Like CI's
+# Terraform job it needs no credentials and never connects to a server: Ansible itself is run from your laptop
+# (docs/MONITORING.md), and deploys stay with the Deliver workflow, which never connects to a VM.
+on:
+  pull_request:
+    branches: [main]
+    paths: ["ansible/**", ".github/workflows/ops-lint.yml"]
+  push:
+    branches: [main]
+    paths: ["ansible/**", ".github/workflows/ops-lint.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ansible:
+    name: Ansible (lint + syntax) and Alloy (validate)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ansible
+    env:
+      ANSIBLE_CORE_VERSION: "2.21.5"
+      ANSIBLE_LINT_VERSION: "26.10.1"
+      ALLOY_VERSION: "1.21.3"
+      ALLOY_SHA256: "50d23af2d0f98c00beac6ce9a365693e60f87fb76b6cad6fe1d161e80588af6d"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install Ansible and ansible-lint
+        run: pip install "ansible-core==${ANSIBLE_CORE_VERSION}" "ansible-lint==${ANSIBLE_LINT_VERSION}"
+      - name: ansible-lint (production profile)
+        run: ansible-lint --offline --profile production
+      - name: Playbook syntax
+        run: ansible-playbook monitoring.yml --syntax-check
+      - name: Install Alloy (to validate the configuration)
+        run: |
+          archive=alloy-linux-amd64.zip
+          curl -sSfLO "https://github.com/grafana/alloy/releases/download/v${ALLOY_VERSION}/${archive}"
+          echo "${ALLOY_SHA256}  ${archive}" | sha256sum -c -
+          unzip -q "${archive}"
+          chmod +x alloy-linux-amd64
+      - name: Render the templates and run alloy validate on every combination
+        run: |
+          for env in staging prod; do
+            ansible-playbook tests/render.yml -i localhost, -e out="$RUNNER_TEMP/alloy" -e alloy_env="$env"
+          done
+          for f in "$RUNNER_TEMP"/alloy/*.alloy; do
+            echo "::group::$(basename "$f")"
+            ./alloy-linux-amd64 validate "$f"
+            echo "::endgroup::"
+          done
