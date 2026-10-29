@@ -7,6 +7,10 @@ server. Each VM runs one small agent, **Grafana Alloy**, that sends the VM's met
 New to these tools? Read section 1 once, then follow steps 2 to 7 in order. Each step says what to check before
 going on.
 
+**The plan** is a series of roadmap items, `mon-1` to `mon-8` (section 14, mirrored in ROADMAP.md). **Claude
+Code** implements them one item per branch and pull request, following CLAUDE.md; section 15 says what it does,
+what stays with you, and the prompt to start each item.
+
 ## 1. How the pieces fit
 
 ```
@@ -289,3 +293,167 @@ service providers, add Grafana Labs there as well.
 | No app lines in Loki | the app's journald tag changed in compose.yaml; update `alloy_log_identifiers_regex` |
 | `alloy validate` failed in the playbook | the template has a mistake; the old config is still in place and Alloy keeps running it |
 | Ops lint fails on a PR | read the job log: ansible-lint names the file and rule; `alloy validate` prints the line |
+
+## 14. The plan: mon-1 to mon-8
+
+Each item is one branch and one pull request (CLAUDE.md "How to implement a roadmap item"). ROADMAP.md holds the
+checkboxes; this section holds the details. **Claude Code** writes, tests and opens the PR; **you** review and
+merge it, and run every step that touches a server or a cloud account. Work top to bottom.
+
+### mon-1 Monitoring agent as code (done)
+
+`ansible/` (inventory, `monitoring.yml`, the `alloy` role), the Alloy config template, `ansible/tests/render.yml`,
+`.github/workflows/ops-lint.yml` and this file. Checked: `alloy validate` on every rendered combination, a test of
+the log filter and masking, ansible-lint (production profile). Not yet run on a VM.
+
+### mon-2 Agent live on staging, then prod
+
+- **You:** steps 2 to 6 of this file: Ansible on the laptop, the Grafana Cloud stack and write-only token, the
+  encrypted `vault.yml`, the VM IPs in `hosts.yml`, then the playbook on staging and, a day later, prod.
+- **Claude Code:** fills in the non-secret values you give it (`group_vars/all/main.yml`, `hosts.yml`) in a PR,
+  and fixes the role if the playbook output you paste shows a bug. It never runs the playbook itself.
+- **Done when:** `up{job="integrations/node_exporter", env="staging"}` and `env="prod"` are 1;
+  `{env="prod", syslog_identifier="medical-records-app"}` shows lines; a second playbook run reports `changed=0`.
+
+### mon-3 App metrics
+
+- **Claude Code:** in `backend/`, instrument the app with `prometheus-fastapi-instrumentator` and serve the metrics
+  with `prometheus_client`'s HTTP server on `METRICS_PORT` (new setting, default 8001, 0 disables), started in the
+  lifespan. Never mount `/metrics` on the main app: Caddy proxies all of `app:8000` to the internet. Group by route
+  template (`/api/records/{record_id}`), exclude `/api/health*`, no user, email, record ID or raw path in any label.
+  Pin both packages in `requirements.txt` (pip-audit must pass). Tests: the metrics server answers with
+  `http_requests_total` labelled by template; the **public** app's `/metrics` never returns Prometheus metrics
+  (the frontend fallback may answer it, but without metric text). README settings table. Then
+  `alloy_scrape_app: true` in `group_vars/all/main.yml`, and the panels/queries in section 8.
+- **You:** merge, let Deliver take it to staging, run the playbook on staging; release to prod with a `vX.Y.Z` tag,
+  then the playbook on prod.
+- **Done when:** `up{job="medical-records-app", env="staging"}` is 1 and `https://<staging domain>/metrics` shows no
+  metrics; the same on prod after the release.
+
+### mon-4 Dashboards and alerts as code
+
+- **Claude Code** (touches `infra/` and `.github/workflows/`: needs your approval of the plan first): a separate
+  Terraform root `infra/grafana/`, so it never shares state with the OCI resources. Provider `grafana/grafana`
+  pinned like `oracle/oci`; state local and git-ignored like `infra/`; credentials only from the environment
+  (`GRAFANA_URL`, `GRAFANA_AUTH` = a service account token you create) and the alert email from a git-ignored
+  `terraform.tfvars` with a `.example` file. Resources: a "Medical records" folder, an email contact point, a
+  notification policy, rule groups for the table in section 7 (and the app's 5xx rate and p95 latency once mon-3
+  is done), and an app dashboard from a JSON file. Extend CI's Terraform job (or Ops lint) with
+  `terraform fmt -check` and `terraform validate` for `infra/grafana`, without credentials.
+- **You:** create the service account (Administration → Service accounts, role Editor or narrower) and token,
+  `terraform init && terraform plan && terraform apply` in `infra/grafana`, then test one alert: on staging,
+  `sudo systemctl stop alloy` until the "VM silent" alert emails you, then start it again. If the Linux Server
+  integration's own alert rules duplicate these, turn those off in Grafana so each problem emails you once.
+- **Done when:** every alert in section 7 exists from code and the test alert arrived.
+
+### mon-5 Deploy annotations
+
+- **Claude Code** (touches `.github/workflows/`: needs your approval first): the step in section 9 in
+  `deploy-staging`, `deploy-production` and `rollback` of `deliver.yml`, after the smoke test, with
+  `continue-on-error: true`. Reads `GRAFANA_URL` (environment variable) and `GRAFANA_TOKEN` (environment secret)
+  from the `staging` and `production` environments only. Updates docs/CICD.md "One-time setup".
+- **You:** a Grafana service account token with the narrowest role that can write annotations; the variable and
+  secret in both GitHub environments.
+- **Done when:** the next staging deploy shows as a marker on the dashboards.
+
+### mon-6 Alert runbook
+
+- **Claude Code:** a section "When an alert fires" here: for each alert, what it means, what to look at first in
+  Grafana (a ready LogQL/PromQL query), the commands **you** run on the VM, and links to the matching DEPLOY.md
+  Part C step or BREACH_RUNBOOK.md (sign-in spikes, unexpected SSH logins). Each alert's description in
+  `infra/grafana/` links to its runbook entry.
+- **Done when:** every alert has an entry and a link.
+
+### mon-7 Privacy and docs
+
+- **Claude Code:** DEPLOY.md B12 gets the Grafana Cloud paragraph from section 12 and a checklist line; README's
+  monitoring paragraph mentions Grafana Cloud and links here; if the in-app privacy notice lists service
+  providers, add Grafana Labs in the same style (a UI text change: check 360px and 430px).
+- **Done when:** a reader of DEPLOY.md and the privacy notice can tell what leaves the VMs and where it goes.
+
+### mon-8 (optional) More of the host setup in Ansible
+
+- **Claude Code:** one step of `scripts/host-setup.sh` per PR becomes a role, in the order of section 11, with
+  ansible-lint passing; the script keeps the step until you confirm the role.
+- **You:** `ansible-playbook <playbook> --check --diff` against both VMs; paste the output into the PR.
+- **Done when:** the role shows `changed=0` on a VM that host-setup.sh prepared, and the step is removed from the
+  script in the same PR.
+
+## 15. Working with Claude Code
+
+CLAUDE.md applies to all of this. In particular, Claude Code never SSHes into a server, never changes staging or
+production, never deploys, merges or approves, and asks before touching `.github/workflows/` or `infra/`.
+
+| Claude Code does | You do |
+| --- | --- |
+| Writes and changes the Ansible role, the Alloy config, app code, Terraform for Grafana, workflows (after your OK), docs | Create the Grafana Cloud stack, tokens and service accounts (web UI, sign-ups) |
+| Runs every check locally: ansible-lint, playbook syntax, `alloy validate` on rendered configs, `terraform validate`, backend and frontend tests | Hold the secrets: the vault password, Grafana tokens, GitHub secrets |
+| Explains output you paste (playbook runs, `journalctl -u alloy`, Grafana errors) and fixes the cause in a PR | Run `ansible-playbook` and `terraform apply`, and anything else on the VMs |
+| Writes PromQL/LogQL queries, alert rules and dashboards as code | Review and merge PRs; approve production deploys |
+| Opens PRs with the template filled in and fixes CI failures on them | Check Grafana: data arrives, an alert test email arrives |
+
+### Guardrails for every mon-* item
+
+- Never run `ansible-playbook`, `ssh`, `scp` or `terraform apply` against anything; give me the commands.
+- Never read, print or commit a secret: Grafana tokens, the vault password, `app.env`, `vault.yml` unencrypted
+  (a committed `vault.yml` starts with `$ANSIBLE_VAULT;1.1;AES256`).
+- Deliver never connects to a VM; nothing needs SSH from GitHub.
+- No user, email, account ID, record ID, file name or raw URL path in a metric label or a new log line. Keep the
+  masking stages in the Alloy config.
+- Pin everything the way the repo already does: package versions, Terraform providers, Alloy, actions by SHA.
+- Stay well inside the free tier: once-a-minute scrapes, few labels, and a rough series count in the PR
+  description for any new metric (well under 10,000 in total for both VMs).
+- Staging first, prod after the owner has checked staging.
+
+### Prompts
+
+**Status** (start of a session, changes nothing):
+
+```text
+Read CLAUDE.md, docs/MONITORING.md and the Monitoring section of ROADMAP.md. Tell me which mon-* items are done,
+which one is next, what it needs from me before you can start, and anything in the repo that has drifted from the
+plan. Don't change anything.
+```
+
+**Implement an item** (replace mon-N):
+
+```text
+Implement roadmap item mon-N (monitoring).
+
+Context: read CLAUDE.md, then docs/MONITORING.md in full: section 14 has mon-N's scope and "done when", section 15
+the guardrails. Then read the files the item touches. The design is settled: Grafana Alloy on each VM pushes
+metrics and logs to Grafana Cloud; Ansible (ansible/), run only by me from my laptop, installs it; Deliver never
+connects to a VM; UptimeRobot stays as the outside check. Don't redesign it. If something in the plan looks wrong
+or out of date, tell me before changing course.
+
+1. Follow CLAUDE.md "How to implement a roadmap item". If mon-N's "Depends on" items aren't ticked in ROADMAP.md,
+   stop and tell me. Show a short plan first (files, new settings, tests, and any change to .github/workflows/ or
+   infra/, which need my approval) and wait for my OK.
+2. Branch chore/mon-N-<short-name> from an up-to-date main.
+3. Implement only mon-N, in the repo's style: pinned versions and action SHAs, comments that explain why.
+4. Verify locally everything that applies, and show me the results:
+   - backend: ruff check . and python -m pytest; frontend: npm run lint, npm run build, npm test
+   - cd ansible && ansible-lint --offline --profile production && ansible-playbook monitoring.yml --syntax-check
+   - render with ansible/tests/render.yml for staging and prod, then alloy validate on each file (the pinned
+     Alloy binary and sha256 from .github/workflows/ops-lint.yml)
+   - terraform fmt -check and terraform validate for any Terraform you touched (no credentials needed)
+5. Update docs/MONITORING.md wherever the item changes how things work. Tick mon-N in ROADMAP.md with one Notes
+   line. Commit "feat(mon-N): <title>" (or docs/fix).
+6. Push and open the PR with gh pr create, filling in the template; list every change to .github/workflows/ and
+   infra/.
+7. End with: what changed; the exact commands and console steps I must do myself, in order (ansible-playbook,
+   terraform apply, Grafana Cloud, GitHub settings); how to confirm each one worked in Grafana; the PR link. Stop.
+
+Never: SSH or run ansible-playbook or terraform apply against anything; read, print or commit secrets (Grafana
+tokens, the vault password, app.env) or an unencrypted vault; put user IDs, emails, record IDs or raw paths in
+metric labels or log lines; weaken CI, lint or tests.
+```
+
+**After a failed run on a VM** (paste the output below the prompt):
+
+```text
+I ran the command below for mon-N and it failed. Read docs/MONITORING.md (sections 5, 13 and 14) and the files
+involved, explain the cause in plain words, and fix it on a branch with a PR if the repo is wrong. If the fix is on
+my side (a setting, a token, a firewall rule), tell me exactly what to change. Don't run anything on the VMs.
+<paste the command and its output, with any token removed>
+```
