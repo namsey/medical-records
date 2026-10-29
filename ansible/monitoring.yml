@@ -1,0 +1,16 @@
+---
+# Installs and configures Grafana Alloy on the staging and prod VMs (docs/MONITORING.md).
+#
+#   cd ansible
+#   ansible-playbook monitoring.yml --limit staging --check --diff --ask-vault-pass   # preview, changes nothing
+#   ansible-playbook monitoring.yml --limit staging --ask-vault-pass                   # apply to staging
+#   ansible-playbook monitoring.yml --limit prod --ask-vault-pass                      # then prod
+#
+# This only touches the monitoring agent. The app, Docker, the deploy agent and backups stay with
+# scripts/host-setup.sh, and deploys stay with the Deliver workflow (docs/CICD.md).
+
+- name: Monitoring agent (Grafana Alloy → Grafana Cloud)
+  hosts: all
+  become: true
+  roles:
+    - alloy

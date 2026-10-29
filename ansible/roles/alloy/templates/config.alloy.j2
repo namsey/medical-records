@@ -1,0 +1,200 @@
+// {{ ansible_managed }}
+// Edit ansible/roles/alloy/templates/config.alloy.j2 in the repo, never this file on the VM.
+//
+// Grafana Alloy on the {{ alloy_env }} VM (docs/MONITORING.md). It collects this VM's metrics and logs and PUSHES
+// them to Grafana Cloud over HTTPS. Nothing here listens for connections from outside: the only port Alloy opens
+// is its debug UI, on 127.0.0.1:12345.
+//
+// How to read this file: each block is a "component". Data flows from a source (exporter, journal) through
+// optional processing to a writer (remote_write, loki.write). `forward_to` and `targets` are the arrows.
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+// ================================================================================================================
+// 1. WHERE THE DATA GOES: Grafana Cloud
+// ================================================================================================================
+// The URLs and user numbers are in ansible/inventory/group_vars/all/main.yml. The token comes from the
+// environment (/etc/default/alloy, mode 640, written from the Ansible vault), so it never sits in this file.
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = "{{ alloy_grafana_cloud_prometheus_url }}"
+
+    basic_auth {
+      username = "{{ alloy_grafana_cloud_prometheus_user }}"
+      password = sys.env("GRAFANA_CLOUD_TOKEN")
+    }
+  }
+
+  // Added to every metric from this VM, so one dashboard can show staging and prod side by side.
+  external_labels = {
+    env = "{{ alloy_env }}",
+  }
+}
+
+loki.write "grafana_cloud" {
+  endpoint {
+    url = "{{ alloy_grafana_cloud_loki_url }}"
+
+    basic_auth {
+      username = "{{ alloy_grafana_cloud_loki_user }}"
+      password = sys.env("GRAFANA_CLOUD_TOKEN")
+    }
+  }
+
+  external_labels = {
+    env      = "{{ alloy_env }}",
+    instance = constants.hostname,
+  }
+}
+
+// ================================================================================================================
+// 2. VM METRICS: CPU, memory, disk space, disk I/O, network, and the state of our systemd units
+// ================================================================================================================
+// prometheus.exporter.unix is node_exporter built into Alloy. The names below ("integrations_node_exporter",
+// job "integrations/node_exporter") match Grafana Cloud's Linux Server integration, so its ready-made
+// dashboards and alert rules work without changes.
+
+prometheus.exporter.unix "integrations_node_exporter" {
+  // Collectors for hardware and filesystems these VMs do not have.
+  disable_collectors = ["ipvs", "btrfs", "infiniband", "xfs", "zfs"]
+  // systemd: lets an alert fire when the backup or deploy unit fails.
+  enable_collectors = ["systemd"]
+
+  systemd {
+    // Only our units: every unit on the VM would be hundreds of series for nothing.
+    unit_include = "{{ alloy_systemd_units_regex }}"
+  }
+
+  filesystem {
+    // Real disks only: the boot volume (/) and, on prod, the data volume (/srv/medical-records).
+    fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|tmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
+    mount_points_exclude = "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|snap/.+)($|/)"
+    mount_timeout        = "5s"
+  }
+
+  // Docker creates a veth interface per container; they come and go and are not worth a series each.
+  netclass {
+    ignored_devices = "^(veth.*|cali.*|[a-f0-9]{15})$"
+  }
+
+  netdev {
+    device_exclude = "^(veth.*|cali.*|[a-f0-9]{15})$"
+  }
+}
+
+discovery.relabel "integrations_node_exporter" {
+  targets = prometheus.exporter.unix.integrations_node_exporter.targets
+
+  rule {
+    target_label = "instance"
+    replacement  = constants.hostname
+  }
+
+  rule {
+    target_label = "job"
+    replacement  = "integrations/node_exporter"
+  }
+}
+
+prometheus.scrape "integrations_node_exporter" {
+  targets    = discovery.relabel.integrations_node_exporter.output
+  forward_to = [prometheus.relabel.integrations_node_exporter.receiver]
+  // Once a minute is plenty for a small app and keeps us far below the free tier's series limit.
+  scrape_interval = "{{ alloy_scrape_interval }}"
+}
+
+prometheus.relabel "integrations_node_exporter" {
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+
+  // node_exporter's metrics about itself: not useful to us.
+  rule {
+    source_labels = ["__name__"]
+    regex         = "node_scrape_collector_.+"
+    action        = "drop"
+  }
+}
+{% if alloy_scrape_app %}
+
+// ================================================================================================================
+// 3. APP METRICS: requests, errors, latency from the app's own /metrics (docs/MONITORING.md, step 8)
+// ================================================================================================================
+// The app serves them on a separate port inside its container. Caddy does not proxy that port and compose does
+// not publish it, so only this VM can reach it, over Docker's bridge network.
+
+prometheus.scrape "app" {
+  targets = [{
+    "__address__" = "{{ alloy_app_metrics_address }}",
+    "instance"    = constants.hostname,
+  }]
+  job_name        = "medical-records-app"
+  scrape_interval = "{{ alloy_scrape_interval }}"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+{% endif %}
+
+// ================================================================================================================
+// 4. LOGS: the systemd journal, filtered to what matters
+// ================================================================================================================
+// The app and Caddy log to the journal (compose.yaml, logging driver journald, tags medical-records-app and
+// medical-records-caddy), and so do the deploy agent, the backup, Docker and SSH. We read the journal and keep
+// only those; everything else stays on the VM.
+
+loki.relabel "journal" {
+  // Only used for its rules (below); it does not forward anything itself.
+  forward_to = []
+
+  // Turn the journal's hidden fields into labels we can filter and search on in Grafana.
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    target_label  = "syslog_identifier"
+  }
+
+  rule {
+    source_labels = ["__journal_container_name"]
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+}
+
+loki.source.journal "read" {
+  forward_to    = [loki.process.filter_and_mask.receiver]
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {job = "systemd-journal"}
+  // On the very first start, send only the last 12 hours instead of the whole journal.
+  max_age = "12h"
+}
+
+loki.process "filter_and_mask" {
+  forward_to = [loki.write.grafana_cloud.receiver]
+
+  // Drop every line that is not from one of our units or programs.
+  stage.match {
+    selector = "{job=\"systemd-journal\", unit!~\"{{ alloy_log_units_regex }}\", syslog_identifier!~\"{{ alloy_log_identifiers_regex }}\"}"
+    action   = "drop"
+  }
+
+  // Defence in depth for a health-data app: the app never logs record contents (deploy/journald), but if an email
+  // address or an Indian mobile number ever ends up in a log line, it is masked before it leaves the VM.
+  stage.replace {
+    expression = "([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,})"
+    replace    = "<email>"
+  }
+
+  stage.replace {
+    expression = "(?:^|[^0-9A-Za-z])((?:[+]?91[ -]?)?[6-9][0-9]{4}[ -]?[0-9]{5})(?:$|[^0-9A-Za-z])"
+    replace    = "<phone>"
+  }
+}

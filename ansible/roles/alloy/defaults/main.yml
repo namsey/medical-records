@@ -1,0 +1,38 @@
+---
+# Defaults for the alloy role. Override them in ansible/inventory/group_vars or host_vars, not here.
+
+# Alloy package version from Grafana's apt repository. Pinned so staging and prod run the same build and an
+# upgrade is a reviewed commit. To upgrade: change it, run the playbook on staging, then on prod.
+# "1.21.*" takes the newest patch release of 1.21.
+alloy_version: "1.21.*"
+
+# The env label on everything this VM sends ("staging" or "prod"). Set per host in host_vars.
+alloy_env: ""
+
+# Grafana Cloud endpoints (Grafana Cloud → your stack → Prometheus / Loki → Details). Set in group_vars/all.
+alloy_grafana_cloud_prometheus_url: ""
+alloy_grafana_cloud_prometheus_user: ""
+alloy_grafana_cloud_loki_url: ""
+alloy_grafana_cloud_loki_user: ""
+# The access policy token (scopes: metrics:write, logs:write). Set in the vault, never in plain text.
+alloy_grafana_cloud_token: ""
+
+# How often metrics are collected. 60s keeps the free tier's series and samples well within limits.
+alloy_scrape_interval: "60s"
+
+# systemd units whose state (active, failed, ...) becomes metrics, for "backup failed" style alerts.
+alloy_systemd_units_regex: "(medical-records-.+|docker|clamav-daemon|clamav-freshclam|alloy|ssh)[.](service|timer)"
+
+# Logs kept from the journal: lines from these units, or from these programs (SYSLOG_IDENTIFIER). The app and
+# Caddy containers log as medical-records-app / medical-records-caddy (compose.yaml); kernel keeps OOM kills.
+# Use [.] instead of \. for a literal dot: it survives YAML, Jinja, Alloy and LogQL without escaping.
+alloy_log_units_regex: "medical-records-.+|docker[.]service|clamav-.+|alloy[.]service|ssh[.]service"
+alloy_log_identifiers_regex: "medical-records-.+|kernel"
+
+# App metrics (docs/MONITORING.md step 8). Leave false until the app serves /metrics on its metrics port.
+alloy_scrape_app: false
+# The app container's fixed address on the compose network (compose.yaml) and its metrics port.
+alloy_app_metrics_address: "172.30.0.20:8001"
+
+# Alloy's own web UI and API: localhost only. Reach it with an SSH tunnel (docs/MONITORING.md).
+alloy_listen_address: "127.0.0.1:12345"
