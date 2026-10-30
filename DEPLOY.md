@@ -385,6 +385,13 @@ is `/data`. The app refuses to start if a required setting is missing or if `GOO
 sudo medical-records-compose up -d --force-recreate --wait app
 ```
 
+To move to a new Google OAuth client, domain or admin, re-run `host-setup.sh` with the usual flags plus
+`--reset-app-settings` (from a terminal, `ssh -t`). It asks again for the Google client ID and secret, the admin
+email and the grievance contact (the current non-secret values are the defaults), writes `GOOGLE_REDIRECT_URI` from
+`--domain`, keeps `SESSION_SECRET` and every other line, keeps the old file as `app.env.previous` (mode 600) and
+recreates the app. Check the sign-in, then delete `app.env.previous`. These settings stay on the VM only: the
+pipeline never carries them.
+
 ### B8. The stack: app + Caddy, and `medical-records-compose`
 
 Every `docker compose` command for the stack goes through `medical-records-compose`, which runs in
