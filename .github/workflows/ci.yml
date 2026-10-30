@@ -140,6 +140,17 @@ jobs:
         run: terraform init -backend=false -input=false
       - name: Validate
         run: terraform validate
+      # infra/grafana (mon-4) is its own root: fmt above covers it, init/validate/test need their own run. The
+      # tests use a mock provider, so no Grafana stack or token is needed.
+      - name: Init Grafana (no backend, no credentials)
+        working-directory: infra/grafana
+        run: terraform init -backend=false -input=false
+      - name: Validate Grafana
+        working-directory: infra/grafana
+        run: terraform validate
+      - name: Test Grafana alerts and dashboard
+        working-directory: infra/grafana
+        run: terraform test
 
   dockerfile-lint:
     name: Dockerfile lint (hadolint)
