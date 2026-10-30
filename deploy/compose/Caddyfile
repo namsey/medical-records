@@ -1,17 +1,31 @@
 # Same site as DEPLOY.md B9, with the app container as the upstream. SITE_DOMAIN comes from compose:
 # a domain name gets HTTPS from Let's Encrypt; http://localhost (compose.dev.yaml) is plain HTTP.
+# SITE_ALIASES (optional, space-separated) are extra names that get their own certificate and only redirect to
+# SITE_DOMAIN: prod's www name, and old names kept working for a while after a move.
 {
 	# No HTTP/3: UDP 443 is closed in the OCI security list and iptables. Advertising it made phones try QUIC
 	# first, and uploads then failed with "Could not reach the server".
 	servers {
 		protocols h1 h2
+		# Cloudflare's ranges (https://www.cloudflare.com/ips/, checked 2026-10-30). Only a request that really
+		# comes from Cloudflare (orange cloud) may set the client IP with CF-Connecting-IP; anyone else gets their
+		# own address. Without this, every visitor behind Cloudflare would share a few IPs in the rate limits.
+		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		client_ip_headers CF-Connecting-IP
 	}
 }
 
-{$SITE_DOMAIN} {
+{$SITE_DOMAIN} {$SITE_ALIASES} {
+	# alias.invalid only keeps the matcher valid when SITE_ALIASES is empty; no request has that name.
+	@alias host {$SITE_ALIASES} alias.invalid
+	redir @alias https://{$SITE_DOMAIN}{uri} permanent
+
 	encode gzip
 	request_body {
 		max_size 25MB
 	}
-	reverse_proxy app:8000
+	reverse_proxy app:8000 {
+		# The one client IP Caddy worked out (above), so the app never sees a Cloudflare address.
+		header_up X-Forwarded-For {client_ip}
+	}
 }

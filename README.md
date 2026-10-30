@@ -1,4 +1,4 @@
-# Medical Records
+# HealthKitab
 
 A private, invite-only web app where each person keeps their own medical records: doctor visits, prescriptions,
 lab reports, diagnoses, scans and documents. It is built mobile-first for phones, runs on one small server (made
