@@ -1,7 +1,8 @@
 # What both VMs run (ctr-2): the app image behind Caddy, which serves HTTPS for SITE_DOMAIN.
 #
 # On the VMs this folder is installed to /opt/medical-records/compose by scripts/host-setup.sh, next to a .env with
-# APP_IMAGE, DATA_DIR, SITE_DOMAIN and APP_MEMORY_LIMIT, and run through medical-records-compose (DEPLOY.md B6).
+# APP_IMAGE, DATA_DIR, SITE_DOMAIN, SITE_ALIASES and APP_MEMORY_LIMIT, and run through medical-records-compose
+# (DEPLOY.md B6).
 # The deploy agent sets APP_IMAGE (always <registry>/<namespace>/medical-records/app@sha256:<digest>, never a
 # tag). DATA_DIR must be owned by 10001:10001. The app's settings and secrets come from /etc/medical-records/app.env.
 # APP_ENV_FILE, CLAMAV_RUN_DIR and BACKUP_STATUS_HOST_DIR exist for local tests only; the VMs use the defaults.
@@ -55,6 +56,8 @@ services:
     image: caddy:2.11.7@sha256:504a44d7d74bd2bc28a66afc4774912fc21223ca8a67734af1c54ab2f999b489
     environment:
       SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN, e.g. records.example.com}
+      # Optional names that only redirect to SITE_DOMAIN (prod: the www name), space-separated.
+      SITE_ALIASES: ${SITE_ALIASES:-}
     ports:
       - "80:80"
       - "443:443"

@@ -228,6 +228,16 @@ Check it from your computer before going on (it can take a few minutes up to a f
 nslookup records.yourname.in      # must show the VM's IP
 ```
 
+Extra names that should only redirect to the main one (prod's `www.records.yourname.in`, or the old name for a
+while after moving to a new domain) get their own A record to the same IP and an `--alias` in Part B; Caddy gets a
+certificate for each and answers with a permanent redirect. When you move to a new domain, also change the Google
+OAuth redirect URI (A11, and `GOOGLE_REDIRECT_URI` in B7) and the `APP_URL` of that GitHub environment
+(docs/CICD.md).
+
+Cloudflare in front (orange cloud) works too: set SSL/TLS to **Full (strict)**. Caddy takes the visitor's IP from
+`CF-Connecting-IP` only when the request really comes from one of Cloudflare's address ranges (listed in
+`deploy/compose/Caddyfile`; check them against https://www.cloudflare.com/ips/ now and then).
+
 ### A11. Google sign-in (OAuth client)
 
 Google only confirms who is signing in; it never sees records.
@@ -292,7 +302,7 @@ Copy the script to each VM and run it from a real terminal (`ssh -t`), so it can
 ```bash
 scp -i ~/.ssh/oracle-medical-records scripts/host-setup.sh ubuntu@<prod IP>:
 ssh -t -i ~/.ssh/oracle-medical-records ubuntu@<prod IP> sudo ./host-setup.sh --env prod \
-  --domain records.yourname.in --registry bom.ocir.io \
+  --domain records.yourname.in --alias www.records.yourname.in --registry bom.ocir.io \
   --repository bom.ocir.io/<namespace>/medical-records/app --format-data-volume
 
 scp -i ~/.ssh/oracle-medical-records scripts/host-setup.sh ubuntu@<staging IP>:
@@ -301,7 +311,8 @@ ssh -t -i ~/.ssh/oracle-medical-records ubuntu@<staging IP> sudo ./host-setup.sh
   --repository bom.ocir.io/<namespace>/medical-records/app
 ```
 
-`--format-data-volume` only on prod's very first run (B4). It asks for:
+`--format-data-volume` only on prod's very first run (B4). `--alias` is optional and repeatable (A10); give the
+same ones on every run, because the compose `.env` is rewritten. It asks for:
 
 - the Google OAuth client ID and secret (**staging: its own client from A11**, never prod's), the admin email and
   the grievance officer;
@@ -346,7 +357,7 @@ is no such user on the VM, and none is needed). The database, files and the app'
 - `/opt/medical-records/repo`: a clone of this repository. The agent keeps it at the commit of the image that is
   running, so the backup scripts and compose files always match the app.
 - `/opt/medical-records/compose`: `compose.yaml` and `Caddyfile` from that commit, and `.env` with `DATA_DIR`,
-  `SITE_DOMAIN`, `APP_MEMORY_LIMIT` (prod 2g, staging 1g) and `APP_IMAGE` (empty until the first deploy).
+  `SITE_DOMAIN`, `SITE_ALIASES` (the `--alias` names), `APP_MEMORY_LIMIT` (prod 2g, staging 1g) and `APP_IMAGE` (empty until the first deploy).
 - `docker login bom.ocir.io` as `<namespace>/vm-image-puller` (A12), stored in `/root/.docker/config.json`.
 
 ### B7. App settings
@@ -389,7 +400,7 @@ The app container runs as 10001 with a read-only system, can write only `/data` 
 on any port: only Caddy reaches it, over the stack's own network. Caddy is the second container, on ports 80 and
 443: it gets and renews the Let's Encrypt certificate by itself (it needs the DNS record from A10 and ports 80/443
 open in A4 and B2), keeps it in a Docker volume, and passes each visitor's real IP to the app (trusted only from
-Caddy's fixed address). HTTP/3 is off on purpose: UDP 443 is closed, and phones that tried it first failed to
+Caddy's fixed address; behind Cloudflare, the IP from `CF-Connecting-IP`, see A10). HTTP/3 is off on purpose: UDP 443 is closed, and phones that tried it first failed to
 upload. Both containers restart by themselves after a crash or a reboot. Their logs go to the journal, capped at
 500 MB and one month (`deploy/journald/medical-records.conf`). The app never logs record contents, search terms or
 file names.

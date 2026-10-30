@@ -10,7 +10,7 @@ export function AuthShell({ subtitle, children }: { subtitle: string; children: 
             <path d="M26 10h12v16h16v12H38v16H26V38H10V26h16z" fill="currentColor" />
           </svg>
         </div>
-        <h1 className="page-title">Medical Records</h1>
+        <h1 className="page-title">HealthKitab</h1>
         <p className="page-subtitle mt-2">{subtitle}</p>
       </div>
       {children}

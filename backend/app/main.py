@@ -53,7 +53,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     # The interactive API docs are switched off: this is a private app with no public API consumers.
     app = FastAPI(
-        title="Personal Medical Records",
+        title="HealthKitab",
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,

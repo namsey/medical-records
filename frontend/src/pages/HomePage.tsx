@@ -12,7 +12,7 @@ export function HomePage() {
 
   return (
     <>
-      <PageHeader title="Medical Records" subtitle="Your private health journal" />
+      <PageHeader title="HealthKitab" subtitle="Your private health journal" />
 
       <section className="space-y-3" aria-labelledby="recent-heading">
         <div className="flex items-baseline justify-between">

@@ -2,8 +2,10 @@
 # Prepares a VM to run the Compose stack and deploy itself from OCI Container Registry (DEPLOY.md Part B, ctr-3).
 # Run as root over SSH, from a real terminal so it can ask for the secrets. Safe to run again.
 #
-#   sudo ./host-setup.sh --env prod|staging --domain D --registry R --repository REPO [--format-data-volume]
+#   sudo ./host-setup.sh --env prod|staging --domain D [--alias A]... --registry R --repository REPO [--format-data-volume]
 #
+#   --alias        optional, repeatable: another name that only redirects to --domain (prod: www.<domain>; an old
+#                  name kept for a while after a move). Give them on every run: the compose .env is rewritten.
 #   --registry     the region's OCIR host, e.g. bom.ocir.io             (terraform output ocir_registry)
 #   --repository   e.g. bom.ocir.io/<namespace>/medical-records/app     (terraform output ocir_repository)
 #   --format-data-volume   prod only, first run only: mkfs the data volume, and only if blkid finds no filesystem
@@ -30,15 +32,16 @@ APP_UID=10001 # the app container's user and group (Dockerfile)
 REGION=ap-mumbai-1
 BUCKET=medical-records-backup
 
-env_name="" domain="" registry="" repository="" format_volume=0
+env_name="" domain="" aliases="" registry="" repository="" format_volume=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env) env_name="$2"; shift ;;
     --domain) domain="$2"; shift ;;
+    --alias) aliases="${aliases:+$aliases }$2"; shift ;;
     --registry) registry="$2"; shift ;;
     --repository) repository="$2"; shift ;;
     --format-data-volume) format_volume=1 ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "Unknown option $1" >&2; exit 2 ;;
   esac
   shift
@@ -46,6 +49,9 @@ done
 [[ $EUID -eq 0 ]] || { echo "Run with sudo" >&2; exit 2; }
 [[ "$env_name" == "prod" || "$env_name" == "staging" ]] || { echo "--env must be prod or staging" >&2; exit 2; }
 [[ -n "$domain" && -n "$registry" && -n "$repository" ]] || { echo "--domain, --registry and --repository are required" >&2; exit 2; }
+for name in $aliases; do
+  [[ "$name" =~ ^[a-z0-9.-]+$ && "$name" != "$domain" ]] || { echo "--alias takes a host name other than --domain, e.g. www.$domain" >&2; exit 2; }
+done
 [[ "$registry" == *.ocir.io ]] || { echo "--registry looks like bom.ocir.io" >&2; exit 2; }
 [[ "$repository" == "$registry"/*/* ]] || { echo "--repository looks like $registry/<namespace>/medical-records/app" >&2; exit 2; }
 [[ "$format_volume" == "0" || "$env_name" == "prod" ]] || { echo "--format-data-volume is for prod only (staging has no data volume)" >&2; exit 2; }
@@ -204,6 +210,7 @@ memory=1g
 cat >"$COMPOSE_DIR/.env.new" <<EOF
 DATA_DIR=$DATA_MOUNT/data
 SITE_DOMAIN=$domain
+SITE_ALIASES=$aliases
 APP_MEMORY_LIMIT=$memory
 $app_image
 EOF

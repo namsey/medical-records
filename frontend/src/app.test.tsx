@@ -25,7 +25,7 @@ describe('authentication', () => {
   it('leaves the login page once signed in', async () => {
     mockApi({ ...authed, 'GET /api/records': emptyPage })
     renderApp('/login')
-    expect(await screen.findByRole('heading', { name: 'Medical Records' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'HealthKitab' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /sign in/i })).not.toBeInTheDocument()
   })
 })
@@ -325,7 +325,7 @@ describe('adding a record', () => {
     renderApp('/add/doctor_visit')
     await userEvent.click(await screen.findByRole('button', { name: 'Close' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Medical Records' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'HealthKitab' })).toBeInTheDocument()
   })
 
   it('asks before discarding unsaved changes', async () => {
@@ -342,7 +342,7 @@ describe('adding a record', () => {
 
     await user.click(screen.getByRole('button', { name: 'Close' }))
     await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Discard' }))
-    expect(await screen.findByRole('heading', { name: 'Medical Records' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'HealthKitab' })).toBeInTheDocument()
   })
 
   it('asks before a bottom-nav tab leaves a form with unsaved changes', async () => {
@@ -374,7 +374,7 @@ describe('adding a record', () => {
     mockApi({ ...authed, 'GET /api/records': emptyPage })
     renderApp('/add')
     await userEvent.click(await screen.findByRole('button', { name: 'Close' }))
-    expect(await screen.findByRole('heading', { name: 'Medical Records' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'HealthKitab' })).toBeInTheDocument()
   })
 })
 
