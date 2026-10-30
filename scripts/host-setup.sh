@@ -328,10 +328,12 @@ fi
 
 if [[ "$settings_reset" == "1" ]]; then
   step "Restarting the app with the new settings"
-  if medical-records-compose up -d --force-recreate --wait app; then
+  # Under the deploy agent's lock: the agent (started above, or by its timer) may be replacing the same container.
+  # Whatever it deploys meanwhile already reads the new app.env; this restart then covers the case of no deploy.
+  if flock -w 600 /run/lock/medical-records-deploy.lock medical-records-compose up -d --force-recreate --wait app; then
     echo "  Check the sign-in, then delete the old settings: sudo rm $ETC/app.env.previous"
   else
-    todo+=("app not restarted (no image deployed yet?): the deploy agent starts it with the new app.env")
+    todo+=("app not restarted (a deploy still running, or no image yet): check sudo medical-records-compose ps")
   fi
 fi
 
