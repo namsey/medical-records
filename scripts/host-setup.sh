@@ -3,12 +3,16 @@
 # Run as root over SSH, from a real terminal so it can ask for the secrets. Safe to run again.
 #
 #   sudo ./host-setup.sh --env prod|staging --domain D [--alias A]... --registry R --repository REPO [--format-data-volume]
+#                        [--reset-app-settings]
 #
 #   --alias        optional, repeatable: another name that only redirects to --domain (prod: www.<domain>; an old
 #                  name kept for a while after a move). Give them on every run: the compose .env is rewritten.
 #   --registry     the region's OCIR host, e.g. bom.ocir.io             (terraform output ocir_registry)
 #   --repository   e.g. bom.ocir.io/<namespace>/medical-records/app     (terraform output ocir_repository)
 #   --format-data-volume   prod only, first run only: mkfs the data volume, and only if blkid finds no filesystem
+#   --reset-app-settings   ask again for the Google client, admin and grievance settings and rewrite them in app.env
+#                  (SESSION_SECRET and every other line are kept; the old file is kept as app.env.previous), then
+#                  restart the app. Use it to move to a new OAuth client or domain.
 #
 # It installs Docker, the data folder (owned by the app container's user, 10001), /etc/medical-records/app.env,
 # the compose files, the medical-records-compose wrapper, the deploy agent and its timer, and signs in to OCIR
@@ -32,7 +36,7 @@ APP_UID=10001 # the app container's user and group (Dockerfile)
 REGION=ap-mumbai-1
 BUCKET=medical-records-backup
 
-env_name="" domain="" aliases="" registry="" repository="" format_volume=0
+env_name="" domain="" aliases="" registry="" repository="" format_volume=0 reset_settings=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env) env_name="$2"; shift ;;
@@ -41,7 +45,8 @@ while [[ $# -gt 0 ]]; do
     --registry) registry="$2"; shift ;;
     --repository) repository="$2"; shift ;;
     --format-data-volume) format_volume=1 ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    --reset-app-settings) reset_settings=1 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "Unknown option $1" >&2; exit 2 ;;
   esac
   shift
@@ -55,6 +60,7 @@ done
 [[ "$registry" == *.ocir.io ]] || { echo "--registry looks like bom.ocir.io" >&2; exit 2; }
 [[ "$repository" == "$registry"/*/* ]] || { echo "--repository looks like $registry/<namespace>/medical-records/app" >&2; exit 2; }
 [[ "$format_volume" == "0" || "$env_name" == "prod" ]] || { echo "--format-data-volume is for prod only (staging has no data volume)" >&2; exit 2; }
+[[ "$reset_settings" == "0" || ( -t 0 && -t 1 ) ]] || { echo "--reset-app-settings asks for secrets: run it from a terminal (ssh -t)" >&2; exit 2; }
 namespace="${repository#"$registry"/}"
 namespace="${namespace%%/*}"
 
@@ -156,33 +162,48 @@ git -C "$REPO_DIR" log -1 --format='at %h %s'
 
 step "B7: app settings ($ETC/app.env)"
 install -d -m 700 "$ETC"
+# The settings asked for below; --reset-app-settings rewrites only these and keeps every other line.
+ASKED_KEYS='^(GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|GOOGLE_REDIRECT_URI|ADMIN_EMAIL|GRIEVANCE_NAME|GRIEVANCE_EMAIL)='
+current() { { sed -n "s/^$1=//p" "$ETC/app.env" 2>/dev/null || true; } | tail -1; } # a non-secret's value now, as the default
+ask_app_settings() {
+  if [[ "$env_name" == "staging" ]]; then
+    echo "  Use the STAGING Google OAuth client (redirect https://$domain/api/auth/callback), never prod's."
+  fi
+  ask google_id "Google OAuth client ID"
+  ask_secret google_secret "Google OAuth client secret (not shown)"
+  ask admin_email "Admin email (your Google account)" "$(current ADMIN_EMAIL)"
+  ask grievance_name "Grievance officer name (privacy notice)" "$(current GRIEVANCE_NAME)"
+  local was_email
+  was_email=$(current GRIEVANCE_EMAIL)
+  ask grievance_email "Grievance email" "${was_email:-$admin_email}"
+}
+asked_settings() {
+  printf '%s\n' "GOOGLE_CLIENT_ID=$google_id" "GOOGLE_CLIENT_SECRET=$google_secret" \
+    "GOOGLE_REDIRECT_URI=https://$domain/api/auth/callback" "ADMIN_EMAIL=$admin_email" \
+    "GRIEVANCE_NAME=$grievance_name" "GRIEVANCE_EMAIL=$grievance_email"
+}
+settings_reset=0
 if [[ ! -s "$ETC/app.env" ]]; then
   if have_tty; then
-    if [[ "$env_name" == "staging" ]]; then
-      echo "  Use the STAGING Google OAuth client (redirect https://$domain/api/auth/callback), never prod's."
-    fi
-    ask google_id "Google OAuth client ID"
-    ask_secret google_secret "Google OAuth client secret (not shown)"
-    ask admin_email "Admin email (your Google account)"
-    ask grievance_name "Grievance officer name (privacy notice)"
-    ask grievance_email "Grievance email" "$admin_email"
+    ask_app_settings
     session_secret=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))') # new on every VM
     install -m 600 /dev/null "$ETC/app.env"
     # Where the data lives (DATABASE_URL, FILES_DIR, UPLOAD_DIR) is set by compose.yaml.
-    cat >"$ETC/app.env" <<EOF
-GOOGLE_CLIENT_ID=$google_id
-GOOGLE_CLIENT_SECRET=$google_secret
-GOOGLE_REDIRECT_URI=https://$domain/api/auth/callback
-ADMIN_EMAIL=$admin_email
-SESSION_SECRET=$session_secret
-GRIEVANCE_NAME=$grievance_name
-GRIEVANCE_EMAIL=$grievance_email
-EOF
+    { asked_settings; echo "SESSION_SECRET=$session_secret"; } >"$ETC/app.env"
     unset google_secret session_secret
     echo "written"
   else
     todo+=("app.env (Google client ID/secret): re-run from a terminal")
   fi
+elif [[ "$reset_settings" == "1" ]]; then
+  ask_app_settings
+  install -m 600 /dev/null "$ETC/app.env.new"
+  { asked_settings; grep -Ev "$ASKED_KEYS" "$ETC/app.env" || true; } >"$ETC/app.env.new"
+  unset google_secret
+  install -m 600 "$ETC/app.env" "$ETC/app.env.previous"
+  mv "$ETC/app.env.new" "$ETC/app.env"
+  settings_reset=1
+  echo "rewritten (SESSION_SECRET and other lines kept; the old file is $ETC/app.env.previous)"
 fi
 if [[ -s "$ETC/app.env" ]]; then
   grep -q "^GOOGLE_REDIRECT_URI=https://$domain/" "$ETC/app.env" ||
@@ -303,6 +324,15 @@ if grep -q "\"$registry\"" /root/.docker/config.json 2>/dev/null && [[ -s "$ETC/
   echo "enabled; follow it with: journalctl -fu medical-records-deploy"
 else
   todo+=("deploy agent not enabled yet: needs app.env and the OCIR sign-in")
+fi
+
+if [[ "$settings_reset" == "1" ]]; then
+  step "Restarting the app with the new settings"
+  if medical-records-compose up -d --force-recreate --wait app; then
+    echo "  Check the sign-in, then delete the old settings: sudo rm $ETC/app.env.previous"
+  else
+    todo+=("app not restarted (no image deployed yet?): the deploy agent starts it with the new app.env")
+  fi
 fi
 
 step "Status"
