@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (git-ignored). No secrets belong here: the token is GRAFANA_AUTH in the environment.
+alert_email = "you@example.com"
+
+# Optional: only if your stack's data sources have other UIDs (Connections -> Data sources -> the URL ends in it).
+# prometheus_datasource_uid = "grafanacloud-prom"
+# loki_datasource_uid       = "grafanacloud-logs"

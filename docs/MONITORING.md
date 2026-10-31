@@ -174,8 +174,30 @@ Same checks with `env="prod"`. Alloy uses little memory (typically a couple of h
 "install Alloy" instructions: Ansible did that, with the same job and instance names, so the dashboards work as
 they are. Use the `instance` drop-down to switch between the staging and prod VMs.
 
-**Where alerts go.** Alerting → Contact points → add your email. Then Alerting → Alert rules → New, for each row
-below, on the prod data (`env="prod"`). Start with these; add more only when one would have told you something.
+**Alerts, as code (mon-4).** `infra/grafana/` (Terraform, its own state, never shared with `infra/`) makes a
+"HealthKitab" folder, an email contact point, the notification policy, one rule group with the rows below on the
+prod data (`env="prod"`), and the "HealthKitab" dashboard (VM, failed units, log counts; request panels come with
+mon-3). Change alerts there, not in the UI: an apply puts back what the code says. Start with these; add more only
+when one would have told you something.
+
+1. **Service account** (once): Administration → Users and access → Service accounts → Add, role **Editor**, then
+   Add service account token. If the apply is refused on the notification policy, give the account **Admin**.
+2. **Settings**, on your laptop:
+   ```bash
+   cd infra/grafana
+   cp terraform.tfvars.example terraform.tfvars     # then set alert_email to the inbox you read
+   export GRAFANA_URL=https://<stack>.grafana.net
+   read -rs GRAFANA_AUTH && export GRAFANA_AUTH       # paste the token; it is not shown or saved
+   ```
+3. **Apply:** `terraform init`, `terraform plan` (expect 5 to add: folder, contact point, policy, rule group,
+   dashboard), then `terraform apply`. The notification policy is the stack's **whole** routing tree: it replaces
+   any policy made by hand.
+4. **Duplicates:** if you installed the Linux Server integration's alert rules, pause them (Alerting → Alert rules →
+   the integration's folder) so each problem emails you once.
+5. **Test alert:** the rules watch prod only, so point them at staging for a few minutes instead of stopping
+   anything on prod: `terraform apply -var alert_env=staging`, then on staging `sudo systemctl stop alloy`. Within
+   about 12 minutes "VM silent" emails you. `sudo systemctl start alloy`, wait for the "Resolved" email, then
+   `terraform apply` again to put the rules back on prod (prod is unwatched only during the test).
 
 | Alert | Query | Fires when |
 | --- | --- | --- |
@@ -188,8 +210,9 @@ below, on the prod data (`env="prod"`). Start with these; add more only when one
 | Virus scanner down (logs) | `sum(count_over_time({env="prod", syslog_identifier="medical-records-app"} \|= "Virus scanner unavailable" [15m]))` | above 0 |
 | Sign-in attempts spike (logs) | `sum(count_over_time({env="prod", syslog_identifier="medical-records-app"} \|= "Sign-in rejected" [15m]))` | above 20 |
 
-UptimeRobot stays: it checks from outside OCI, so it still alerts when the whole VM, region or Alloy is gone.
-The two overlap a little on purpose.
+UptimeRobot (DEPLOY.md B12) is not set up on these VMs (owner's choice, 2026-10-30): "VM silent" is the only
+alert when the whole VM, region or Alloy is gone, so keep it. No data counts as healthy for every rule; "VM silent"
+uses `absent_over_time`, which returns 1 only when the metrics stop.
 
 **Logs you will search most** (Explore → Loki):
 
@@ -336,7 +359,7 @@ the log filter and masking, ansible-lint (production profile). Not yet run on a 
   Terraform root `infra/grafana/`, so it never shares state with the OCI resources. Provider `grafana/grafana`
   pinned like `oracle/oci`; state local and git-ignored like `infra/`; credentials only from the environment
   (`GRAFANA_URL`, `GRAFANA_AUTH` = a service account token you create) and the alert email from a git-ignored
-  `terraform.tfvars` with a `.example` file. Resources: a "Medical records" folder, an email contact point, a
+  `terraform.tfvars` with a `.example` file. Resources: a "HealthKitab" folder, an email contact point, a
   notification policy, rule groups for the table in section 7 (and the app's 5xx rate and p95 latency once mon-3
   is done), and an app dashboard from a JSON file. Extend CI's Terraform job (or Ops lint) with
   `terraform fmt -check` and `terraform validate` for `infra/grafana`, without credentials.

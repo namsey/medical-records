@@ -57,6 +57,7 @@ the laptop, installs it. Deliver still never connects to a VM, and UptimeRobot (
   - Notes: VM IPs, Grafana Cloud endpoints (ap-south-1) and the encrypted vault.yml in PR #41; the owner ran the playbook on staging and then prod (2026-10-29) and confirmed metrics in Prometheus and app logs in Loki for both.
 - [ ] mon-3 App metrics: request count, errors and latency per route template on a private METRICS_PORT (default 8001, 0 disables), never mounted on the public app; Alloy scrapes it (alloy_scrape_app). Depends on: mon-2.
 - [ ] mon-4 Dashboards and alerts as code: infra/grafana/ (Grafana Terraform provider, local state) with the alert rules of MONITORING.md section 7, an email contact point and an app dashboard; fmt/validate in CI. Depends on: mon-2 (app panels and alerts after mon-3).
+  - Notes: infra/grafana/ (grafana/grafana 4.50.0): HealthKitab folder, email contact point, notification policy, the 8 prod alerts, a VM/units/log-counts dashboard; `terraform test` with a mock provider in CI. Tick after the owner's apply and test alert; app panels/alerts wait for mon-3, runbook links for mon-6.
 - [ ] mon-5 Deploy annotations: Deliver marks each staging and prod deploy in Grafana (never fails a deploy). Depends on: mon-2.
 - [ ] mon-6 Alert runbook: for every alert, what it means and the first steps, linked to DEPLOY.md and BREACH_RUNBOOK.md. Depends on: mon-4.
 - [ ] mon-7 Privacy and docs: Grafana Cloud in DEPLOY.md B12 and its checklist, README, and the privacy notice if it lists service providers. Depends on: mon-2.
