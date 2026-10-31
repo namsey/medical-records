@@ -124,12 +124,14 @@ resource "grafana_rule_group" "prod" {
           to   = 0
         }
         # Instant queries: one value per series at evaluation time, so the threshold needs no reduce step.
-        model = jsonencode(rule.value.source == "prometheus" ? {
+        # Each branch is encoded on its own: a conditional between objects of different shapes would
+        # unify them to map(string) and turn instant/range into "true"/"false" strings.
+        model = rule.value.source == "prometheus" ? jsonencode({
           refId   = "A"
           expr    = rule.value.expr
           instant = true
           range   = false
-          } : {
+          }) : jsonencode({
           refId     = "A"
           expr      = rule.value.expr
           queryType = "instant"

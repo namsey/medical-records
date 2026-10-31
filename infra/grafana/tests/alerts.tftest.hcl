@@ -34,6 +34,14 @@ run "alerts_match_monitoring_section_7" {
   }
 
   assert {
+    condition = alltrue([
+      for r in grafana_rule_group.prod.rule : jsondecode(r.data[0].model).instant == true && jsondecode(r.data[0].model).range == false
+      if can(jsondecode(r.data[0].model).instant)
+    ]) && length([for r in grafana_rule_group.prod.rule : r if can(jsondecode(r.data[0].model).instant)]) == 5
+    error_message = "The 5 Prometheus queries must send instant/range as JSON booleans, not strings."
+  }
+
+  assert {
     condition     = alltrue([for r in grafana_rule_group.prod.rule : r.no_data_state == "OK" && r.condition == "B"])
     error_message = "No data must mean healthy, and B (the threshold) must be the condition."
   }
