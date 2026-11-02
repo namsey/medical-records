@@ -69,6 +69,22 @@ run "alerts_match_monitoring_section_7" {
   }
 
   assert {
+    condition = alltrue([
+      for r in grafana_rule_group.prod.rule :
+      r.annotations.runbook_url == "${var.runbook_base_url}#${replace(lower(r.name), " ", "-")}"
+    ])
+    error_message = "Every alert must link to its runbook entry: the anchor of its heading in docs/MONITORING.md."
+  }
+
+  assert {
+    condition = alltrue([
+      for r in grafana_rule_group.prod.rule :
+      strcontains(file("${path.module}/../../docs/MONITORING.md"), "\n### ${r.name}\n")
+    ])
+    error_message = "Every alert needs a \"### <alert name>\" entry in docs/MONITORING.md section 16."
+  }
+
+  assert {
     condition     = nonsensitive(tolist(one(grafana_contact_point.email.email).addresses)) == tolist(["alerts@example.com"])
     error_message = "Alerts must go to alert_email."
   }

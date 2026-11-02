@@ -11,6 +11,7 @@ locals {
   rules = [
     {
       name     = "VM silent"
+      runbook  = "vm-silent"
       source   = "prometheus"
       expr     = "absent_over_time(up{job=\"integrations/node_exporter\", env=\"${local.env}\"}[10m])"
       above    = 0
@@ -21,6 +22,7 @@ locals {
     },
     {
       name     = "Disk filling"
+      runbook  = "disk-filling"
       source   = "prometheus"
       expr     = "100 * (1 - node_filesystem_avail_bytes{${local.disk}} / node_filesystem_size_bytes{${local.disk}})"
       above    = 80
@@ -31,6 +33,7 @@ locals {
     },
     {
       name     = "Memory"
+      runbook  = "memory"
       source   = "prometheus"
       expr     = "100 * (1 - node_memory_MemAvailable_bytes{env=\"${local.env}\"} / node_memory_MemTotal_bytes{env=\"${local.env}\"})"
       above    = 90
@@ -41,6 +44,7 @@ locals {
     },
     {
       name     = "Backup failed"
+      runbook  = "backup-failed"
       source   = "prometheus"
       expr     = "${local.unit}\"medical-records-backup.service\"}"
       above    = 0
@@ -51,6 +55,7 @@ locals {
     },
     {
       name     = "Deploy agent failing"
+      runbook  = "deploy-agent-failing"
       source   = "prometheus"
       expr     = "${local.unit}\"medical-records-deploy.service\"}"
       above    = 0
@@ -61,6 +66,7 @@ locals {
     },
     {
       name     = "App errors"
+      runbook  = "app-errors"
       source   = "loki"
       expr     = "sum(count_over_time(${local.app} |= \"Unhandled\" [15m]))"
       above    = 0
@@ -71,6 +77,7 @@ locals {
     },
     {
       name     = "Virus scanner down"
+      runbook  = "virus-scanner-down"
       source   = "loki"
       expr     = "sum(count_over_time(${local.app} |= \"Virus scanner unavailable\" [15m]))"
       above    = 0
@@ -81,6 +88,7 @@ locals {
     },
     {
       name     = "Sign-in attempts spike"
+      runbook  = "sign-in-attempts-spike"
       source   = "loki"
       expr     = "sum(count_over_time(${local.app} |= \"Sign-in rejected\" [15m]))"
       above    = 20
@@ -113,7 +121,9 @@ resource "grafana_rule_group" "prod" {
       labels         = { severity = rule.value.severity, env = local.env }
       annotations = {
         summary     = rule.value.summary
-        description = "Query: ${rule.value.expr}. What to do: docs/MONITORING.md (mon-6 adds a runbook entry per alert)."
+        description = "Query: ${rule.value.expr}. What to do: ${var.runbook_base_url}#${rule.value.runbook}"
+        # Grafana shows runbook_url as a link in the alert email and the alert's page.
+        runbook_url = "${var.runbook_base_url}#${rule.value.runbook}"
       }
 
       data {

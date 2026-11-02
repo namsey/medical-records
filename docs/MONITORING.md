@@ -175,7 +175,7 @@ they are. Use the `instance` drop-down to switch between the staging and prod VM
 "HealthKitab" folder, an email contact point, the notification policy, one rule group with the rows below on the
 prod data (`env="prod"`), and the "HealthKitab" dashboard (VM, failed units, log counts; request panels come with
 mon-3). Change alerts there, not in the UI: an apply puts back what the code says. Start with these; add more only
-when one would have told you something.
+when one would have told you something. **What to do when one fires:** section 16 (each alert email links to it).
 
 1. **Service account** (once): Administration → Users and access → Service accounts → Add, role **Editor**, then
    Add service account token. If the apply is refused on the notification policy, give the account **Admin**.
@@ -485,3 +485,217 @@ involved, explain the cause in plain words, and fix it on a branch with a PR if 
 my side (a setting, a token, a firewall rule), tell me exactly what to change. Don't run anything on the VMs.
 <paste the command and its output, with any token removed>
 ```
+
+## 16. When an alert fires
+
+One entry per alert in `infra/grafana/alerts.tf`; each alert email links here (its `runbook_url`). The queries are
+for **Explore** in Grafana and use `env="prod"`; for staging, change it to `env="staging"`. The commands run on the
+VM, over SSH from your laptop (`ssh -i ~/.ssh/oracle-medical-records ubuntu@<IP>`, IPs in
+`ansible/inventory/hosts.yml`). Keep a note of what you saw and did; if anything points at someone reaching data
+they should not, stop here and follow [BREACH_RUNBOOK.md](BREACH_RUNBOOK.md) from section 2.
+
+A "Resolved" email follows when the condition clears. Alerts on failed units (backup, deploy agent) clear only
+when the unit next runs successfully, or after `sudo systemctl reset-failed <unit>`.
+
+### VM silent
+
+**Means:** Grafana Cloud has had no metrics from the VM for 10 minutes. Either the VM (or its network, or Oracle's
+region) is down, or only Alloy stopped. This is the only alert for a lost VM: there is no outside uptime check.
+
+**Look first:** open `https://healthkitab.in/api/health` in a browser.
+
+- **It answers `ok`:** the app is fine and only monitoring is blind. In Grafana:
+  `up{job="integrations/node_exporter", env="prod"}` (empty since when?) and
+  `{env="prod", unit="alloy.service"}` (Alloy's last lines). On the VM:
+
+  ```bash
+  systemctl status alloy --no-pager
+  journalctl -u alloy -n 50 --no-pager      # "401"/"403": the vault token was revoked or expired (section 10, "Rotate the token")
+  sudo systemctl restart alloy
+  ```
+
+- **It does not answer:** Oracle console → Compute → Instances → the VM. *Stopped*: Oracle may have reclaimed an
+  idle Always Free VM ([DEPLOY.md C5](../DEPLOY.md#c5-oracle-always-free-things-to-know)); start it, and the app
+  and Alloy start with it. *Running* but no SSH either: Instance → Console connection or reboot from the console.
+  The VM or its disk is gone: [DEPLOY.md C4](../DEPLOY.md#c4-disaster-recovery-the-vm-or-its-disk-is-gone), then
+  `ansible-playbook monitoring.yml --limit prod` (section 10, "A rebuilt VM").
+
+### Disk filling
+
+**Means:** the system disk (`/`) or the data disk (`/srv/medical-records`) is more than 80% full. A full data disk
+stops uploads and can stop the database and the backups.
+
+**Look first:** which disk and how fast it grew:
+
+```promql
+100 * (1 - node_filesystem_avail_bytes{env="prod", mountpoint=~"/|/srv/medical-records"} / node_filesystem_size_bytes{env="prod", mountpoint=~"/|/srv/medical-records"})
+```
+
+A steady climb over weeks is users' files: plan more storage (DEPLOY.md C5, "Storage growth"). A sudden jump is
+something else. **Admin → Server** in the app shows both disks too. On the VM
+([DEPLOY.md C7](../DEPLOY.md#c7-troubleshooting), "Disk alert"):
+
+```bash
+df -h / /srv/medical-records
+sudo du -sh /srv/medical-records/data/* /var/log/journal /var/lib/docker
+sudo docker system df                      # images: the agent keeps the current and the previous one
+sudo journalctl --vacuum-size=500M         # if the journal is the big one
+```
+
+Never delete anything under `/srv/medical-records/data` to make room: it holds the database, the users' files and
+the pre-migration copies the app prunes by itself. Leftover `data.before-restore-*` folders from a restore
+(DEPLOY.md C4) can go once the restored data is confirmed good. Files you did not expect, or space used by
+something you cannot name: [BREACH_RUNBOOK.md section 1](BREACH_RUNBOOK.md#1-detect-signs-that-something-is-wrong).
+
+### Memory
+
+**Means:** more than 90% of the VM's memory has been in use for 10 minutes. Next comes the kernel killing a
+process (often clamd, which needs about 1 GB, or the app).
+
+**Look first:**
+
+```promql
+100 * (1 - node_memory_MemAvailable_bytes{env="prod"} / node_memory_MemTotal_bytes{env="prod"})
+```
+
+```logql
+{env="prod", syslog_identifier="kernel"} |= "Out of memory"
+```
+
+On the VM:
+
+```bash
+free -h
+ps aux --sort=-rss | head -n 10
+sudo docker stats --no-stream
+```
+
+If one process keeps growing, restart it: the app with `sudo medical-records-compose restart app`, the scanner with
+`sudo systemctl restart clamav-daemon`. If it began with a release, roll back
+([DEPLOY.md C1](../DEPLOY.md#c1-updating-the-app)). A process you do not recognise:
+[BREACH_RUNBOOK.md section 1](BREACH_RUNBOOK.md#1-detect-signs-that-something-is-wrong).
+
+### Backup failed
+
+**Means:** last night's `medical-records-backup.service` run failed, so the newest restorable copy is older than
+you think.
+
+**Look first:**
+
+```logql
+{env="prod", unit="medical-records-backup.service"}
+```
+
+On the VM ([DEPLOY.md C2](../DEPLOY.md#c2-checking-the-backups)):
+
+```bash
+cat /var/lib/medical-records-backup/last-success
+journalctl -u medical-records-backup.service -n 50 --no-pager
+sudo systemctl start medical-records-backup.service     # run it again once the cause is fixed; the alert clears when it succeeds
+```
+
+Usual causes: the `backup-writer` key was rotated or deleted (DEPLOY.md A9, B11), the bucket is over the
+Object Storage allowance (`restic stats`, C2), or the disk is full (see "Disk filling"). Deletions or snapshots
+in the bucket that you did not make: [BREACH_RUNBOOK.md section 1](BREACH_RUNBOOK.md#1-detect-signs-that-something-is-wrong).
+
+### Deploy agent failing
+
+**Means:** `medical-records-deploy.service` has been failing for 10 minutes, so new releases do not reach the VM.
+The app keeps running the image it has.
+
+**Look first:**
+
+```logql
+{env="prod", unit="medical-records-deploy.service"}
+```
+
+On the VM ([DEPLOY.md C7](../DEPLOY.md#c7-troubleshooting), "A new version does not appear"):
+
+```bash
+journalctl -u medical-records-deploy -n 50 --no-pager
+sudo tail -n 30 /var/lib/medical-records/deploy.log
+ls /etc/medical-records/deploy-paused        # paused on purpose? rm it to resume
+```
+
+`unauthorized` from `bom.ocir.io` means the `vm-image-puller` token expired or was rotated (DEPLOY.md A12): log
+in again with `sudo docker login bom.ocir.io -u <namespace>/vm-image-puller`. A failed backup before the switch
+blocks the deploy: fix that first ("Backup failed"). Releases and rollbacks:
+[DEPLOY.md C1](../DEPLOY.md#c1-updating-the-app). An image or tag you did not push:
+[BREACH_RUNBOOK.md section 2](BREACH_RUNBOOK.md#2-contain-stop-it-getting-worse-first-hour) (rotate the OCIR tokens).
+
+### App errors
+
+**Means:** the app logged at least one `Unhandled` error in the last 15 minutes: a request failed with "Something
+went wrong on the server". The line names the error type and the route template, never the record or its contents.
+
+**Look first:**
+
+```logql
+{env="prod", syslog_identifier="medical-records-app"} |= "Unhandled"
+```
+
+Which route and error type, how often, and did it start with a deploy (compare with
+`{env="prod", unit="medical-records-deploy.service"}`)? On the VM:
+
+```bash
+journalctl -t medical-records-app -n 100 --no-pager
+sudo medical-records-compose ps
+```
+
+One error is worth a GitHub issue with the route and error type (no user data in it). Many, right after a release:
+roll back ([DEPLOY.md C1](../DEPLOY.md#c1-updating-the-app)). Errors that mention the database or `/data`:
+[DEPLOY.md C7](../DEPLOY.md#c7-troubleshooting) and "Disk filling".
+
+### Virus scanner down
+
+**Means:** the app could not reach ClamAV, so uploads are being refused (never saved unscanned). Prod only;
+staging has no scanner.
+
+**Look first:**
+
+```logql
+{env="prod", unit=~"clamav-.+"}
+```
+
+```logql
+{env="prod", syslog_identifier="kernel"} |= "Out of memory"
+```
+
+On the VM ([DEPLOY.md C6](../DEPLOY.md#c6-optional-virus-scan-of-uploads-clamav)):
+
+```bash
+systemctl status clamav-daemon --no-pager
+journalctl -u clamav-daemon -n 50 --no-pager
+ls -l /run/clamav/clamd.ctl
+sudo systemctl restart clamav-daemon     # it takes a minute or two to load its signatures
+```
+
+If the kernel killed clamd for memory, see "Memory". After a restart, upload an ordinary PDF in the app to check.
+
+### Sign-in attempts spike
+
+**Means:** more than 20 rejected sign-ins in 15 minutes. Usually someone with the wrong Google account or an old
+invite link trying again and again; it can also be someone probing the app.
+
+**Look first:** the reasons (the lines never contain emails):
+
+```logql
+sum by (reason) (count_over_time({env="prod", syslog_identifier="medical-records-app"} |= "Sign-in rejected" | regexp "Sign-in rejected: (?P<reason>.+)" [1h]))
+```
+
+```logql
+{env="prod", syslog_identifier="medical-records-app"} |~ "Sign-in rejected|Rate limit reached"
+```
+
+```logql
+{env="prod", unit="ssh.service"} |~ "Accepted|Failed"
+```
+
+Then **Admin → Activity** in the app: sign-ins, invites or account changes you did not expect.
+
+- `no account and no invite`, `invite_wrong_account` or `invite_invalid` (a used, revoked or expired link) from
+  one person you know: help them, or send a new invite
+  ([DEPLOY.md C7](../DEPLOY.md#c7-troubleshooting), invite rows).
+- `the account is disabled`: someone you disabled keeps trying; nothing to do unless it continues.
+- Activity you did not expect, an SSH login (`Accepted`) that was not you, or it keeps going:
+  [BREACH_RUNBOOK.md](BREACH_RUNBOOK.md) sections 1 and 2 (disable accounts, sign everyone out).
