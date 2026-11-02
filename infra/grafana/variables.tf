@@ -14,6 +14,13 @@ variable "alert_env" {
   default     = "prod"
 }
 
+# The runbook (docs/MONITORING.md section 16) that each alert links to, with the alert's heading as the anchor.
+variable "runbook_base_url" {
+  description = "URL of docs/MONITORING.md, where section 16 has one heading per alert."
+  type        = string
+  default     = "https://github.com/namsey/medical-records/blob/main/docs/MONITORING.md"
+}
+
 # Grafana Cloud creates both data sources with the stack; these are their UIDs (Connections -> Data sources).
 variable "prometheus_datasource_uid" {
   description = "UID of the stack's Prometheus (Mimir) data source."
