@@ -189,6 +189,10 @@ when one would have told you something.
    export GRAFANA_URL=https://<stack>.grafana.net
    read -rs GRAFANA_AUTH && export GRAFANA_AUTH       # paste the token; it is not shown or saved
    ```
+   Grafana Cloud only emails addresses that are members of the organization: invite `alert_email` first
+   (grafana.com → Members → Invite, role **Viewer**) and accept the invite, or the contact point is refused with
+   "not members of this organization". Paste the token once: a `glsa_` token is about 46 characters, and a
+   401 "Invalid API key" usually means a double paste or a token from another stack.
 3. **Apply:** `terraform init`, `terraform plan` (expect 5 to add: folder, contact point, policy, rule group,
    dashboard), then `terraform apply`. The notification policy is the stack's **whole** routing tree: it replaces
    any policy made by hand.
