@@ -64,8 +64,11 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def unhandled_error(request: Request, exc: Exception) -> JSONResponse:
-        # Log where it happened, never the query string or body (they can contain medical data).
-        logger.error("Unhandled %s on %s %s", type(exc).__name__, request.method, request.url.path)
+        # Log where it happened as the route template (e.g. /api/records/{record_id}), never the actual path, query
+        # string or body: they can contain record IDs or medical data, and these lines are shipped to Loki.
+        route = request.scope.get("route")
+        where = getattr(route, "path", None) or "unmatched route"
+        logger.error("Unhandled %s on %s %s", type(exc).__name__, request.method, where)
         return JSONResponse({"detail": "Something went wrong on the server."}, status_code=500)
 
     for module in (health, version, auth, account, records, directories, documents, overview, backup, admin):
