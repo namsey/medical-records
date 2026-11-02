@@ -42,6 +42,13 @@ infra/terraform.tfstate.*
 infra/*.tfplan
 infra/*.log
 infra/.terraform.tfstate.lock.info
+# Terraform (infra/grafana/, mon-4): its own root, same rules
+infra/grafana/.terraform/
+infra/grafana/terraform.tfstate
+infra/grafana/terraform.tfstate.*
+infra/grafana/*.tfplan
+infra/grafana/*.log
+infra/grafana/.terraform.tfstate.lock.info
 *.tfvars
 !*.tfvars.example
 

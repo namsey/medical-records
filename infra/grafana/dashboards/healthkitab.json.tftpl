@@ -1,0 +1,126 @@
+{
+  "uid": "healthkitab-app",
+  "title": "HealthKitab",
+  "description": "The VM, the app's systemd units and the app's log signals. Managed by infra/grafana: edits in the UI are overwritten on the next apply. Request panels come with mon-3.",
+  "tags": ["healthkitab"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "env",
+        "label": "Environment",
+        "type": "custom",
+        "query": "prod,staging",
+        "current": { "text": "prod", "value": "prod" },
+        "options": [
+          { "text": "prod", "value": "prod", "selected": true },
+          { "text": "staging", "value": "staging", "selected": false }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "VM", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Reporting",
+      "description": "1 while Alloy on the VM sends metrics.",
+      "datasource": { "type": "prometheus", "uid": "${prometheus_uid}" },
+      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 1 },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "${prometheus_uid}" },
+          "expr": "max(up{job=\"integrations/node_exporter\", env=\"$env\"}) or vector(0)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "silent", "color": "red" }, "1": { "text": "up", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }
+        }
+      }
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Disk used (%)",
+      "description": "The alert fires above 80 on prod.",
+      "datasource": { "type": "prometheus", "uid": "${prometheus_uid}" },
+      "gridPos": { "h": 6, "w": 7, "x": 4, "y": 1 },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "${prometheus_uid}" },
+          "expr": "100 * (1 - node_filesystem_avail_bytes{env=\"$env\", mountpoint=~\"/|/srv/medical-records\"} / node_filesystem_size_bytes{env=\"$env\", mountpoint=~\"/|/srv/medical-records\"})",
+          "legendFormat": "{{mountpoint}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } }
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Memory used (%)",
+      "datasource": { "type": "prometheus", "uid": "${prometheus_uid}" },
+      "gridPos": { "h": 6, "w": 7, "x": 11, "y": 1 },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "${prometheus_uid}" },
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes{env=\"$env\"} / node_memory_MemTotal_bytes{env=\"$env\"})",
+          "legendFormat": "memory" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } }
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "CPU busy (%)",
+      "datasource": { "type": "prometheus", "uid": "${prometheus_uid}" },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "${prometheus_uid}" },
+          "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{env=\"$env\", mode=\"idle\"}[$__rate_interval])))",
+          "legendFormat": "cpu" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } }
+    },
+    {
+      "id": 6, "type": "row", "title": "Services", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 }
+    },
+    {
+      "id": 7, "type": "state-timeline", "title": "Failed systemd units",
+      "description": "1 = failed. Backup runs on prod only.",
+      "datasource": { "type": "prometheus", "uid": "${prometheus_uid}" },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "${prometheus_uid}" },
+          "expr": "max by (name) (node_systemd_unit_state{env=\"$env\", state=\"failed\", name=~\"medical-records-.*|alloy.service|docker.service|clamav-daemon.service\"})",
+          "legendFormat": "{{name}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "ok", "color": "green" }, "1": { "text": "failed", "color": "red" } } }
+          ]
+        }
+      }
+    },
+    {
+      "id": 8, "type": "row", "title": "App log signals (counts only, no log text)", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Unhandled errors, rejected sign-ins, virus scanner unavailable",
+      "datasource": { "type": "loki", "uid": "${loki_uid}" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 15 },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "${loki_uid}" },
+          "expr": "sum(count_over_time({env=\"$env\", syslog_identifier=\"medical-records-app\"} |= \"Unhandled\" [$__auto]))",
+          "legendFormat": "unhandled errors" },
+        { "refId": "B", "datasource": { "type": "loki", "uid": "${loki_uid}" },
+          "expr": "sum(count_over_time({env=\"$env\", syslog_identifier=\"medical-records-app\"} |= \"Sign-in rejected\" [$__auto]))",
+          "legendFormat": "rejected sign-ins" },
+        { "refId": "C", "datasource": { "type": "loki", "uid": "${loki_uid}" },
+          "expr": "sum(count_over_time({env=\"$env\", syslog_identifier=\"medical-records-app\"} |= \"Virus scanner unavailable\" [$__auto]))",
+          "legendFormat": "virus scanner unavailable" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "bars" } } }
+    }
+  ]
+}
