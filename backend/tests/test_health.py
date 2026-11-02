@@ -120,3 +120,7 @@ def test_server_errors_never_log_record_contents(client, make_record, monkeypatc
     assert SECRET not in response.text
     assert caplog.records, "the error should be logged"
     assert all(SECRET not in entry.getMessage() for entry in caplog.records)
+    # The app logs the route template, never the record ID from the actual path (httpx's own client log is not ours).
+    app_lines = [entry.getMessage() for entry in caplog.records if entry.name.startswith("app")]
+    assert any("PUT /api/records/{record_id}" in line for line in app_lines)
+    assert all(str(record["id"]) not in line for line in app_lines)
