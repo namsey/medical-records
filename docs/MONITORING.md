@@ -1,7 +1,6 @@
 # Monitoring: Grafana Cloud with Grafana Alloy, installed by Ansible
 
-This adds **graphs, logs and alerts** to what UptimeRobot already does (DEPLOY.md B12), without a monitoring
-server. Each VM runs one small agent, **Grafana Alloy**, that sends the VM's metrics and the app's logs to
+This gives the VMs **graphs, logs and alerts** (DEPLOY.md B12), without a monitoring server. Each VM runs one small agent, **Grafana Alloy**, that sends the VM's metrics and the app's logs to
 **Grafana Cloud** (free tier). **Ansible**, run from your laptop, installs and configures Alloy on both VMs.
 
 New to these tools? Read section 1 once, then follow steps 2 to 7 in order. Each step says what to check before
@@ -27,7 +26,6 @@ what stays with you, and the prompt to start each item.
                                │  Alloy: reads VM metrics + journal ─────────────────────┼──► Grafana Cloud
                                └────────────────────────────────────────────────────────┘    metrics, logs,
                                                                                               dashboards, alerts
-  UptimeRobot ── checks /api/health, /disk, /backup every 5 min from outside (unchanged)
 ```
 
 | Tool | Job | Runs where | Changed by |
@@ -38,7 +36,6 @@ what stays with you, and the prompt to start each item.
 | CI / Deliver (`.github/`) | tests, image, deploys by moving an OCIR tag | GitHub | a merge or a `vX.Y.Z` tag |
 | **Alloy** | sends metrics and logs to Grafana Cloud | on each VM, as a systemd service | Ansible |
 | **Grafana Cloud** | stores 14 days of metrics and logs; dashboards; alerts | Grafana Labs | the web UI |
-| UptimeRobot | "is it up?" from outside OCI, even when the VM is gone | UptimeRobot | the web UI |
 
 Three decisions behind this design:
 
@@ -303,11 +300,15 @@ volume formatting (B4) in the script until last.
 
 ## 12. Privacy and DEPLOY.md
 
-Add to DEPLOY.md B12, next to the UptimeRobot note: *Grafana Cloud (Grafana Labs) receives the VMs' resource
-metrics and the log lines of the app, Caddy, the deploy agent, the backups, Docker, ClamAV, SSH and kernel OOM
-messages. The app never logs record contents, search terms or file names; Alloy masks email addresses and phone
-numbers before sending. Data is kept 14 days in the region chosen for the stack.* If the privacy notice lists
-service providers, add Grafana Labs there as well.
+What leaves the VMs is written down in two places (mon-7), and they must stay in step with the Alloy config:
+
+- **DEPLOY.md B12:** Grafana Cloud (Grafana Labs) receives the VMs' resource metrics and the log lines of the app,
+  Caddy, the deploy agent, the backups, Docker, ClamAV, SSH and kernel OOM messages. The app never logs record
+  contents, search terms or file names; Alloy masks email addresses and phone numbers before sending. Data is kept
+  14 days in the region chosen for the stack.
+- **The in-app privacy notice** ("Where"), in plain words for users. It changed for this in version `2026-11`
+  (`backend/app/privacy.py`), so every account agrees to it again. If what Alloy sends changes in substance, change
+  the notice and bump the version too.
 
 ## 13. Troubleshooting
 
@@ -450,7 +451,7 @@ Implement roadmap item mon-N (monitoring).
 Context: read CLAUDE.md, then docs/MONITORING.md in full: section 14 has mon-N's scope and "done when", section 15
 the guardrails. Then read the files the item touches. The design is settled: Grafana Alloy on each VM pushes
 metrics and logs to Grafana Cloud; Ansible (ansible/), run only by me from my laptop, installs it; Deliver never
-connects to a VM; UptimeRobot stays as the outside check. Don't redesign it. If something in the plan looks wrong
+connects to a VM; there is no outside uptime monitor ("VM silent" covers a lost VM). Don't redesign it. If something in the plan looks wrong
 or out of date, tell me before changing course.
 
 1. Follow CLAUDE.md "How to implement a roadmap item". If mon-N's "Depends on" items aren't ticked in ROADMAP.md,

@@ -31,7 +31,8 @@ for Oracle Cloud's free tier in India, see [DEPLOY.md](DEPLOY.md)), and keeps ev
 **On the server**
 
 - Nightly encrypted backups to Oracle Object Storage in Mumbai, a weekly copy to a disk at home, and a restore
-  script with a monthly drill. Health checks for an uptime monitor (app, disk space, backups).
+  script with a monthly drill. Health checks (app, disk space, backups), and monitoring and email alerts with
+  Grafana Cloud (VM metrics and masked logs, see [docs/MONITORING.md](docs/MONITORING.md)).
 
 | Layer    | Technology |
 |----------|------------|

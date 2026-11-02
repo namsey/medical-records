@@ -50,7 +50,7 @@ Work top to bottom. Each item lists what "done" means.
 
 ## Monitoring (plan and details: docs/MONITORING.md sections 14 and 15)
 Grafana Alloy on each VM pushes metrics and logs to Grafana Cloud (free tier); Ansible, run only by the owner from
-the laptop, installs it. Deliver still never connects to a VM, and UptimeRobot (#45) stays as the outside check.
+the laptop, installs it. Deliver still never connects to a VM. There is no outside uptime monitor (owner's choice, 2026-10-30); Grafana's "VM silent" alert covers a lost VM.
 - [x] mon-1 Monitoring agent as code: ansible/ (inventory, monitoring.yml, the alloy role: pinned apt install, journal access, token from an ansible-vault file in /etc/default/alloy, config checked with `alloy validate`), the Alloy config (VM metrics, systemd unit states, filtered journal logs with email/phone masking, optional app metrics), the Ops lint workflow and docs/MONITORING.md.
   - Notes: Every rendered config (staging/prod, app metrics on/off) passes `alloy validate` with Alloy 1.21.3 and starts; the log filter and masking were tested with sample lines; ansible-lint passes the production profile. Not yet run on a VM (that is mon-2).
 - [x] mon-2 Agent live on staging, then prod. Depends on: mon-1. Owner: Grafana Cloud stack, write-only token, encrypted vault, VM IPs, then `ansible-playbook monitoring.yml` on staging and a day later prod (MONITORING.md steps 2-6). Done when `up{env=...}` is 1 for both, the app's logs show in Loki and a second run reports changed=0.
@@ -60,7 +60,8 @@ the laptop, installs it. Deliver still never connects to a VM, and UptimeRobot (
   - Notes: infra/grafana/ (grafana/grafana 4.50.0): HealthKitab folder, email contact point, notification policy, the 8 prod alerts, a VM/units/log-counts dashboard; `terraform test` with a mock provider in CI. Applied by the owner on 2026-11-02; "VM silent" test alert email received (staging). App panels/alerts wait for mon-3, runbook links for mon-6.
 - [ ] mon-5 Deploy annotations: Deliver marks each staging and prod deploy in Grafana (never fails a deploy). Depends on: mon-2.
 - [ ] mon-6 Alert runbook: for every alert, what it means and the first steps, linked to DEPLOY.md and BREACH_RUNBOOK.md. Depends on: mon-4.
-- [ ] mon-7 Privacy and docs: Grafana Cloud in DEPLOY.md B12 and its checklist, README, and the privacy notice if it lists service providers. Depends on: mon-2.
+- [x] mon-7 Privacy and docs: Grafana Cloud in DEPLOY.md B12 and its checklist, README, and the privacy notice if it lists service providers. Depends on: mon-2.
+  - Notes: DEPLOY.md B12 is now Grafana Cloud (what leaves the VMs; UptimeRobot kept as an optional extra), checklist and C-step updated; README links MONITORING.md; the privacy notice's "Where" names Grafana Cloud and PRIVACY_VERSION is 2026-11, so every account agrees again.
 - [ ] mon-8 (optional) More of host-setup.sh as Ansible roles, one step per PR, each confirmed by the owner with --check --diff showing changed=0. Depends on: mon-2.
 
 ## Parked (not planned)

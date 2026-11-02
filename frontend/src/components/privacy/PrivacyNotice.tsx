@@ -45,8 +45,15 @@ export function PrivacyNotice() {
       <Part title="Where">
         <p>
           On one server in India (Oracle Cloud, Mumbai). Encrypted backups are kept in Oracle Cloud in Mumbai, and an
-          encrypted copy of those backups on the administrator's own disk in India. Your data is not sent to any other
-          service or country. Signing in uses Google, which only learns that you signed in to this app.
+          encrypted copy of those backups on the administrator's own disk in India. Signing in uses Google, which only
+          learns that you signed in to this app.
+        </p>
+        <p>
+          To keep the server healthy, its technical figures (memory, disk space, error counts) and the app's technical
+          messages (for example errors and rejected sign-ins) go to Grafana Cloud, a monitoring service run by Grafana
+          Labs, stored in India (Mumbai) for 14 days. These never contain your records, files, file names or searches,
+          and email addresses and phone numbers are masked before they leave the server. Your data is not sent to any
+          other service or country.
         </p>
       </Part>
 
