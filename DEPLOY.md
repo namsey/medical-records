@@ -17,7 +17,7 @@ India: first the Oracle resources (Part A), then the server (Part B), then runni
                                               │  nightly, encrypted (restic)
                                               ▼
                           Object Storage bucket, Oracle Mumbai ──weekly──▶ your disk at home
- UptimeRobot ──checks /api/health, /disk, /backup every 5 min──▶ emails you when something is wrong
+ Grafana Alloy (on the VM) ──metrics and logs──▶ Grafana Cloud, Mumbai ──▶ emails you when something is wrong
 ```
 
 **About the database.** The app uses **SQLite**: the database is one file (`medical_records.db`) on the VM's data
@@ -510,9 +510,18 @@ How the nightly backup works:
 - It writes the time of the last good run to `/var/lib/medical-records-backup/last-success`, and of a failed run
   to `last-failure`; `/api/health/backup` reads them (B12).
 
-### B12. Monitoring and alerts (UptimeRobot)
+### B12. Monitoring and alerts (Grafana Cloud)
 
-The app has three public health checks. Each answers `200 {"status": "ok"}` or `503 {"status": "problem",
+Monitoring and alerts come from **Grafana Cloud**: Grafana Alloy on each VM (installed with Ansible) sends the VM's
+metrics and logs, and the alert rules in `infra/grafana/` email you. Set it up with docs/MONITORING.md steps 2 to 7.
+The "VM silent" alert is the one that fires when the whole VM, region or Alloy is gone.
+
+**What leaves the VMs.** Grafana Cloud (Grafana Labs) receives the VMs' resource metrics and the log lines of the
+app, Caddy, the deploy agent, the backups, Docker, ClamAV, SSH and kernel OOM messages. The app never logs record
+contents, search terms or file names; Alloy masks email addresses and phone numbers before sending. Data is kept
+14 days in the region chosen for the stack (Mumbai, `ap-south-1`). The in-app privacy notice says the same.
+
+**Optional: an outside uptime monitor.** The app also has three public health checks. Each answers `200 {"status": "ok"}` or `503 {"status": "problem",
 "reason": ...}` and nothing else (no numbers, paths or user data):
 
 | Check | Fails when |
@@ -521,8 +530,8 @@ The app has three public health checks. Each answers `200 {"status": "ok"}` or `
 | `/api/health/disk` | the data disk or the system disk is more than 80% full (`DISK_ALERT_PERCENT`) |
 | `/api/health/backup` | the last backup run failed, or no backup succeeded in 26 hours (`BACKUP_MAX_AGE_HOURS`) |
 
-UptimeRobot is a US service. It learns only your app's address and whether these checks answer ok, never any
-user data.
+These VMs do not use one (owner's choice, 2026-10-30). If you add one, UptimeRobot is a US service that learns
+only your app's address and whether these checks answer ok, never any user data:
 
 1. Sign up at <https://uptimerobot.com> with your email, and confirm the email alert contact.
 2. Add three **HTTP(s)** monitors, interval 5 minutes:
@@ -535,7 +544,7 @@ user data.
    app; it only acts when the `prod` tag moves.)
 
 **Admin → Server** in the app shows the details: disk use per disk, the last good and failed backup, and when the
-app started. If Oracle ever stops or reclaims the VM, the `app` monitor reports it.
+app started. If Oracle ever stops or reclaims the VM, Grafana's "VM silent" alert reports it.
 
 ### B13. Weekly copy of the backups at home
 
@@ -576,7 +585,8 @@ restic forget --keep-weekly 8 --keep-monthly 12 --prune
 - [ ] Multi-factor authentication on your Oracle account (A1) and on the admin Google account.
 - [ ] Budget alert set (A2).
 - [ ] `https://records.yourname.in` shows a valid certificate; `http://` redirects to `https://`.
-- [ ] The three UptimeRobot monitors are green and you received the test alert emails (B12).
+- [ ] Grafana Cloud shows both VMs, the alerts in `infra/grafana/` are applied and the "VM silent" test alert
+      email arrived (B12, docs/MONITORING.md step 7).
 - [ ] One backup ran and one **restore drill** passed (C3); the restic password is in two safe places.
 - [ ] The privacy notice and `docs/BREACH_RUNBOOK.md` are reviewed, and `GRIEVANCE_NAME` / `GRIEVANCE_EMAIL` set.
 
@@ -695,7 +705,8 @@ A backup is only useful if it restores. Do this monthly, and always after changi
    `restore.sh --apply` restores it, checks it, holds the agent's lock, stops the app, puts the data in place (owned
    by 10001) and starts the app. A backup from an older version is upgraded when the app starts. Never restore
    "latest" blindly here: a backup taken on the new, empty VM would be the latest.
-5. Check the UptimeRobot monitors are green.
+5. Check Grafana shows the new VM (`up{env="prod"}` is 1) and no alert is firing. Alloy must be installed on it
+   again first: run the monitoring playbook (docs/MONITORING.md step 6).
 
 To roll back on a working server (for example after a bad change), `restore.sh --apply <snapshot id>` does the
 same; the data it replaces is moved to `/srv/medical-records/data.before-restore-<time>`, never deleted. If the bad
