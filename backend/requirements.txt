@@ -3,7 +3,7 @@ uvicorn[standard]==0.54.0
 SQLAlchemy==2.1.4
 alembic==1.20.0
 pydantic==2.14.1
-pydantic-settings==2.16.0
+pydantic-settings==2.16.1
 httpx==0.28.1
 itsdangerous==2.2.0
 python-multipart==0.0.32
